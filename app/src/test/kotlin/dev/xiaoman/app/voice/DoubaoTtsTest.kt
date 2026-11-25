@@ -4,6 +4,9 @@ import dev.xiaoman.app.persona.Gender
 import dev.xiaoman.app.settings.TtsProvider
 import dev.xiaoman.app.settings.TtsSettings
 import dev.xiaoman.app.settings.VoiceSettings
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -53,7 +56,11 @@ class DoubaoTtsTest {
         assertTrue(json.contains("\"format\":\"mp3\""))
         assertTrue(json.contains("\"sample_rate\":24000"))
         assertTrue(json.contains("\"speech_rate\":10"))
-        assertTrue(json.contains("\"context_texts\":[\"语气轻一点。\"]"))
+        // additions 必须是 JSON 字符串；服务端对对象会报 55000000。
+        val additions = Json.parseToJsonElement(json).jsonObject["req_params"]!!
+            .jsonObject["additions"]!!.jsonPrimitive
+        assertTrue(additions.isString)
+        assertEquals("""{"context_texts":["语气轻一点。"]}""", additions.content)
         // 表演要求只出现在 context_texts，不会被当成正文。
         assertFalse(json.contains("\"text\""))
 

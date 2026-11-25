@@ -181,8 +181,12 @@ internal object DoubaoTts {
         append(",\"audio_params\":{\"format\":\"mp3\",\"sample_rate\":24000")
         append(",\"speech_rate\":").append(doubaoSpeed(config.speed)).append("}")
         // 表演要求只走 context_texts：它是提示，不朗读、不计费。
+        // 2.0 的 additions 字段要求是「JSON 字符串」，不是对象；直接塞对象会报 55000000。
         val line = instruction?.trim().orEmpty()
-        if (line.isNotEmpty()) append(",\"additions\":{\"context_texts\":[").append(line.quoted()).append("]}")
+        if (line.isNotEmpty()) {
+            val additions = "{\"context_texts\":[${line.quoted()}]}"
+            append(",\"additions\":").append(additions.quoted())
+        }
         append("}}")
     }
 

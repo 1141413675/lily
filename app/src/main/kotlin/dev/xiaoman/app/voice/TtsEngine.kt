@@ -38,6 +38,7 @@ class TtsEngine(private val api: VoiceApi = VoiceApi()) {
         }
         val startedAt = System.nanoTime()
         var firstClipAt = 0L
+        var failure: Throwable? = null
         val clips = Channel<ByteArray>(Channel.UNLIMITED)
         val producer = launch(Dispatchers.IO) {
             try {
@@ -57,6 +58,8 @@ class TtsEngine(private val api: VoiceApi = VoiceApi()) {
                 clips.close(e)
                 throw e
             } catch (e: Exception) {
+                // 记下来交给消费端重抛：只 close 通道会把失败吞掉，通话会变成无声但不报错。
+                failure = e
                 clips.close(e)
             } finally {
                 clips.close()
@@ -75,6 +78,8 @@ class TtsEngine(private val api: VoiceApi = VoiceApi()) {
             val first = if (firstClipAt == 0L) total else (firstClipAt - startedAt) / 1_000_000
             Log.i(TAG, "tts: sentences=${sentences.size} first=${first}ms played=${total}ms chars=${TtsScript.clean(text).length}")
         }
+        producer.join()
+        failure?.let { throw it }
         count
     }
 
