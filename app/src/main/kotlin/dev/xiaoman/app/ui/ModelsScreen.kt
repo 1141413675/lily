@@ -71,6 +71,8 @@ fun ModelsScreen(graph: AppGraph, onBack: () -> Unit) {
             base.copy(
                 chat = p.chat,
                 operator = p.operator,
+                chatVendors = p.chatVendors,
+                operatorVendors = p.operatorVendors,
                 asr = p.asr,
                 tts = p.tts,
                 realtime = p.realtime,
@@ -116,22 +118,44 @@ fun ModelsScreen(graph: AppGraph, onBack: () -> Unit) {
         ) {
             SettingsNote(stringResource(R.string.models_subtitle))
             SettingsGroup(stringResource(R.string.settings_chat_model)) {
-                KeyHint(stringResource(R.string.models_key_ark))
-                ModelSection(form.chat) {
-                    form = form.copy(chat = it)
-                    saved = false
-                }
+                KeyHint(stringResource(R.string.models_vendor_key_hint))
+                ModelSection(
+                    model = form.chat,
+                    onChange = {
+                        form = form.copy(chat = it)
+                        saved = false
+                    },
+                    onVendor = {
+                        form = form.withChatVendor(it)
+                        saved = false
+                    },
+                )
             }
 
             SettingsGroup(stringResource(R.string.settings_operator_model)) {
-                KeyHint(stringResource(R.string.models_key_ark))
-                ModelSection(form.operator) {
-                    form = form.copy(operator = it)
-                    saved = false
-                }
+                KeyHint(stringResource(R.string.models_vendor_key_hint))
+                ModelSection(
+                    model = form.operator,
+                    onChange = {
+                        form = form.copy(operator = it)
+                        saved = false
+                    },
+                    onVendor = {
+                        form = form.withOperatorVendor(it)
+                        saved = false
+                    },
+                )
                 TextButton(
                     onClick = {
-                        form = form.copy(operator = form.operator.copy(baseUrl = form.chat.baseUrl, apiKey = form.chat.apiKey))
+                        // 操作模型沿用聊天模型的厂商与 Key，只把模型名换成视觉模型。
+                        form = form.copy(
+                            operator = form.operator.copy(
+                                baseUrl = form.chat.baseUrl,
+                                apiKey = form.chat.apiKey,
+                                vendor = form.chat.vendor,
+                                protocol = form.chat.protocol,
+                            ),
+                        )
                         saved = false
                     },
                     colors = ButtonDefaults.textButtonColors(contentColor = palette.ink2),
@@ -154,8 +178,8 @@ fun ModelsScreen(graph: AppGraph, onBack: () -> Unit) {
             }
 
             SettingsGroup(stringResource(R.string.settings_tts)) {
-                KeyHint(stringResource(R.string.models_key_siliconflow))
-                VoiceSection(form.tts, showVoice = false) {
+                SettingsNote(stringResource(R.string.models_tts_provider_hint))
+                TtsSection(form.tts) {
                     form = form.copy(tts = it)
                     saved = false
                 }

@@ -1,6 +1,7 @@
 package dev.xiaoman.app.persona
 
 import dev.xiaoman.app.life.LifeSettings
+import dev.xiaoman.app.voice.VoiceRouting
 import kotlinx.serialization.Serializable
 import java.time.LocalDate
 import java.time.Period
@@ -188,6 +189,22 @@ object Voices {
         VoiceOption("FunAudioLLM/CosyVoice2-0.5B:charles", "磁性", "偏亮，干净", Gender.MALE),
         VoiceOption("FunAudioLLM/CosyVoice2-0.5B:david", "欢快", "轻快，句尾上扬", Gender.MALE),
     )
+
+    /** 豆包语音合成 2.0 音色（`*_uranus_bigtts`），与硅基的 id 互不通用。 */
+    val DOUBAO_FEMALE = listOf(
+        VoiceOption("zh_female_vv_uranus_bigtts", "Vivi 2.0", "通用女声，清亮自然", Gender.FEMALE),
+        VoiceOption("zh_female_xiaohe_uranus_bigtts", "小何 2.0", "温和，适合日常对话", Gender.FEMALE),
+        VoiceOption("zh_female_qingxinnvsheng_uranus_bigtts", "清新女声 2.0", "干净，偏年轻", Gender.FEMALE),
+        VoiceOption("zh_female_tianmeixiaoyuan_uranus_bigtts", "甜美小源 2.0", "软糯，尾音轻扬", Gender.FEMALE),
+        VoiceOption("zh_female_cancan_uranus_bigtts", "知性灿灿 2.0", "平稳知性，适合长句", Gender.FEMALE),
+    )
+    val DOUBAO_MALE = listOf(
+        VoiceOption("zh_male_m191_uranus_bigtts", "云舟 2.0", "中低音，句尾稳", Gender.MALE),
+        VoiceOption("zh_male_taocheng_uranus_bigtts", "小天 2.0", "轻快，日常", Gender.MALE),
+        VoiceOption("zh_male_liufei_uranus_bigtts", "刘飞 2.0", "清晰，偏正式", Gender.MALE),
+    )
+    val DOUBAO = DOUBAO_FEMALE + DOUBAO_MALE
+
     val ALL = FEMALE + MALE
 
     /** 默认音色：女 claire / 男 alex；旧安装沿用保存过的 alex。 */
@@ -195,16 +212,30 @@ object Voices {
     const val DEFAULT_FEMALE = "FunAudioLLM/CosyVoice2-0.5B:claire"
     const val DEFAULT_MALE = LEGACY_DEFAULT
 
+    const val DOUBAO_DEFAULT_FEMALE = "zh_female_vv_uranus_bigtts"
+    const val DOUBAO_DEFAULT_MALE = "zh_male_m191_uranus_bigtts"
+
     /** 未显式选音色时按性别给的默认档；不指定性别按女声。 */
     fun defaultVoice(gender: Gender): String = when (gender) {
         Gender.MALE -> DEFAULT_MALE
         Gender.FEMALE, Gender.UNSPECIFIED -> DEFAULT_FEMALE
     }
 
+    fun doubaoDefault(gender: Gender): String = when (gender) {
+        Gender.MALE -> DOUBAO_DEFAULT_MALE
+        Gender.FEMALE, Gender.UNSPECIFIED -> DOUBAO_DEFAULT_FEMALE
+    }
+
+    /** 硅基音色（含 `speech:` 克隆 uri）只能用在前者；豆包 2.0 音色只能用在后者。 */
+    fun isSilicon(id: String): Boolean = id.startsWith("FunAudioLLM/") || VoiceRouting.isClone(id)
+
+    /** 只认 2.0 的 `*_uranus_bigtts`：v1 的 BVxxx 音色在 2.0 下会直接报错。 */
+    fun isDoubao(id: String): Boolean = id.endsWith("_uranus_bigtts") || DOUBAO.any { it.id == id }
+
     /** 实际用于合成的音色：显式选择优先，留空时按性别默认。 */
     fun effective(voice: String, gender: Gender): String = voice.trim().ifBlank { defaultVoice(gender) }
 
-    fun of(id: String): VoiceOption? = ALL.firstOrNull { it.id == id }
+    fun of(id: String): VoiceOption? = ALL.firstOrNull { it.id == id } ?: DOUBAO.firstOrNull { it.id == id }
 
     fun label(id: String): String = of(id)?.label ?: id.substringAfterLast(':').ifBlank { "默认" }
 

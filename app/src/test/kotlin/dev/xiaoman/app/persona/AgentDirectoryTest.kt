@@ -44,7 +44,7 @@ class AgentDirectoryTest {
         )
         val life = LifeSettings(city = "杭州", doing = "写作")
         assertTrue(directory.update(added.id, added.effectiveSettings(shared).copy(
-            persona = persona, life = life, emojiStyle = EmojiStyle.RICH, tts = shared.tts.copy(speed = 1.2f),
+            persona = persona, life = life, emojiStyle = EmojiStyle.RICH, tts = shared.tts.withSpeed(1.2f),
         )))
         assertFalse(directory.update(AgentDirectory.PRIMARY_ID, shared))
         assertFalse(secret in file.readText())
@@ -57,7 +57,7 @@ class AgentDirectoryTest {
         assertEquals(life, effective.life)
         assertEquals(EmojiStyle.RICH, effective.emojiStyle)
         assertEquals(1.2f, effective.tts.speed)
-        assertEquals(cloneVoice, effective.tts.voice)
+        assertEquals(cloneVoice, effective.tts.active.voice)
         assertEquals(defaults.realtime.voice, effective.realtime.voice)
         assertEquals(shared.chat, effective.chat)
         assertFalse(effective.personaVoiceNotice)

@@ -501,7 +501,8 @@ class AppGraph(context: Context, private val llm: LlmClientFactory = LlmClients.
                 persona = value.persona,
                 emojiStyle = value.emojiStyle,
                 life = value.life,
-                tts = global.tts.copy(speed = value.tts.speed),
+                // 语速两套朗读引擎共用：只改速度，供应商与两边的 Key/音色都保留。
+                tts = global.tts.withSpeed(value.tts.speed),
             ))
         }
 

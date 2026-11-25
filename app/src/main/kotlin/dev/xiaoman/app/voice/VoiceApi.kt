@@ -1,7 +1,8 @@
 package dev.xiaoman.app.voice
 
-import dev.xiaoman.app.settings.VoiceSettings
 import android.util.Log
+import dev.xiaoman.app.settings.TtsProvider
+import dev.xiaoman.app.settings.VoiceSettings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -69,13 +70,37 @@ class VoiceApi {
         }
     }
 
-    /** Text to speech; [instruction] controls emotion and prosody on CosyVoice2. */
-    suspend fun speak(config: VoiceSettings, text: String, instruction: String? = null): ByteArray = withContext(Dispatchers.IO) {
+    /**
+     * Text to speech；返回可直接播放的音频字节（两套供应商都是 mp3）。
+     * [instruction] 只用于 CosyVoice2 的自然语言情绪控制；豆包没有这个入口，正文里也绝不拼指令。
+     */
+    suspend fun speak(
+        config: VoiceSettings,
+        text: String,
+        instruction: String? = null,
+        fallback: VoiceSettings? = null,
+    ): ByteArray = withContext(Dispatchers.IO) {
         // 出口最后一道校验：正文里不允许残留表演说明（「语速稍慢」等），有就剔除并留痕。
         val spoken = TtsScript.withoutDirection(text)
         if (spoken != text) {
             Log.w("Xiaoman", "tts: stripped direction wording <${TtsScript.directionLeak(text)}> from body")
         }
+        if (config.provider == TtsProvider.DOUBAO) {
+            // 豆包出错（错误帧、超时、断线）时若硅基还配着，就降级到硅基，保证通话不会整段没声音。
+            return@withContext try {
+                doubaoSpeak(config, spoken, instruction)
+            } catch (e: Exception) {
+                val alt = fallback?.takeIf { it.configured && it.provider == TtsProvider.SILICONFLOW }
+                if (alt == null) throw e
+                Log.w("Xiaoman", "doubao tts failed, fallback to siliconflow: ${e.message}")
+                return@withContext siliconSpeak(alt, spoken, instruction)
+            }
+        }
+        return@withContext siliconSpeak(config, spoken, instruction)
+    }
+
+    /** 硅基 CosyVoice2 的 OpenAI 兼容请求；豆包失败时也用它兜底。 */
+    private fun siliconSpeak(config: VoiceSettings, spoken: String, instruction: String?): ByteArray {
         val input = expressiveSpeechInput(config, spoken, instruction)
         val json = buildString {
             append("{\"model\":").append(config.model.quoted())
@@ -99,15 +124,30 @@ class VoiceApi {
                 "speed=${number(config.speed)} gain=${number(TTS_GAIN)} " +
                 "before=<${before.take(40)}> after=<${after.take(20)}…> len=${input.length}",
         )
-        client.newCall(request(config, "audio/speech", json.toRequestBody(JSON))).execute().use { response ->
+        return client.newCall(request(config, "audio/speech", json.toRequestBody(JSON))).execute().use { response ->
             if (!response.isSuccessful) throw error(failure("朗读失败", response.code, response.body?.string().orEmpty()))
             response.body?.bytes()?.takeIf { it.isNotEmpty() } ?: throw error("朗读结果为空")
         }
     }
 
+    /**
+     * 豆包语音合成 2.0：WebSocket 双向流。连接复用、一句一个 session，
+     * 音频从 AudioOnlyServer 帧的裸二进制负载里取（见 [DoubaoTts]）。
+     */
+    private fun doubaoSpeak(config: VoiceSettings, text: String, instruction: String?): ByteArray {
+        Log.d(
+            "Xiaoman",
+            "tts body: provider=doubao voice=${config.voice.ifBlank { "none" }} resource=${config.resourceId} len=${text.length}",
+        )
+        return DoubaoTts.speak(config, text, instruction)
+    }
+
     private fun request(config: VoiceSettings, path: String, body: okhttp3.RequestBody): Request =
+        post(config.baseUrl.trim().trimEnd('/') + "/" + path, body, config)
+
+    private fun post(url: String, body: okhttp3.RequestBody, config: VoiceSettings): Request =
         Request.Builder()
-            .url(config.baseUrl.trim().trimEnd('/') + "/" + path)
+            .url(url)
             .header("Authorization", "Bearer ${config.apiKey.trim()}")
             .post(body)
             .build()
@@ -117,7 +157,7 @@ class VoiceApi {
         val detail = body.message()
         Log.w("Xiaoman", "voice $label HTTP $code detail=$detail")
         val hint = if (code == 401 || code == 403) {
-            "。这个地址只认对应服务商的 Key（SiliconFlow 用 sk- 开头，方舟的 ark- Key 不通用）"
+            "。这个地址只认对应服务商的 Key（硅基、方舟、豆包 的 Key 互不通用）"
         } else {
             ""
         }
@@ -154,7 +194,7 @@ internal fun expressiveSpeechInput(config: VoiceSettings, text: String, instruct
 }
 
 /** Escapes [this] as the inside of a JSON string. */
-private fun String.quoted(): String = buildString(length + 2) {
+internal fun String.quoted(): String = buildString(length + 2) {
     append('"')
     for (c in this@quoted) {
         when (c) {
@@ -168,6 +208,10 @@ private fun String.quoted(): String = buildString(length + 2) {
     }
     append('"')
 }
+
+/** Value of the first integer field [name] in [json]; null when absent. */
+private fun String.intField(name: String): Int? =
+    Regex("\"${Regex.escape(name)}\"\\s*:\\s*(-?\\d+)").find(this)?.groupValues?.get(1)?.toIntOrNull()
 
 /** Value of the first string field [name] in [json], unescaped; null when absent. */
 private fun String.field(name: String): String? {
@@ -206,5 +250,5 @@ private fun String.unescaped(): String = buildString(length) {
 }
 
 /** A short human-readable error from a provider response body. */
-private fun String.message(): String =
+internal fun String.message(): String =
     field("message") ?: field("error") ?: trim().take(200).ifBlank { "没有返回内容" }

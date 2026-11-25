@@ -6,6 +6,7 @@ import android.util.Log
 import androidx.core.content.edit
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import dev.xiaoman.api.ApiProtocol
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,12 +25,18 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
     @Synchronized
     fun save(settings: AppSettings): Boolean {
         val previous = current
-        val unified = settings.persona.voice.trim()
-        // 音色统一：朗读一定用统一音色；实时通道认不出克隆 uri / 供应商音色时保留它原来的音色，
-        // 不静默写坏实时通话（见 VoiceRouting）。留空表示「没选」，朗读按性别取默认。
+        // 朗读页里给当前引擎填的音色就是统一音色，保存时写回人格，TA 页与通话同步；
+        // 没填则沿用人格里已经选好的那个。
+        val picked = settings.tts.active.voice.trim()
+        val unified = picked.ifEmpty { settings.persona.voice.trim() }
+        // 音色统一：朗读一定用统一音色（两套引擎各自换算，见 TtsSettings.request）；
+        // 实时通道认不出克隆 uri / 供应商音色时保留它原来的音色，不静默写坏实时通话（见 VoiceRouting）。
         val stored = settings.copy(
             memoryEmbedding = settings.memoryEmbedding.normalized(),
-            tts = settings.tts.copy(voice = unified),
+            persona = settings.persona.copy(
+                voice = unified,
+                voiceChosen = settings.persona.voiceChosen || picked.isNotEmpty(),
+            ),
             realtime = settings.realtime.copy(
                 voice = if (unified.isNotEmpty() && dev.xiaoman.app.voice.VoiceRouting.realtimeSupports(settings.realtime.baseUrl, unified)) {
                     unified
@@ -37,12 +44,17 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
                     settings.realtime.voice
                 },
             ),
+            // 当前生效的那套始终进档案，其他厂商的配置一条都不删。
+            chatVendors = settings.chatVendors + (settings.chat.vendor to settings.chat),
+            operatorVendors = settings.operatorVendors + (settings.operator.vendor to settings.operator),
         )
         plain.edit(commit = true) {
             putModel(CHAT, stored.chat)
             putModel(OPERATOR, stored.operator)
+            putVendors("chat", stored.chatVendors)
+            putVendors("operator", stored.operatorVendors)
             putVoice(ASR, stored.asr)
-            putVoice(TTS, stored.tts)
+            putTts(stored.tts)
             putVoice(REALTIME, stored.realtime)
             putBoolean(REALTIME_ENABLED, stored.realtimeEnabled)
             putString(REPLY_MODE, stored.replyMode.name)
@@ -68,8 +80,11 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
         val saved = secret.edit().apply {
             putString(CHAT + API_KEY, stored.chat.apiKey)
             putString(OPERATOR + API_KEY, stored.operator.apiKey)
+            putVendorKeys("chat", stored.chatVendors)
+            putVendorKeys("operator", stored.operatorVendors)
             putString(ASR + API_KEY, stored.asr.apiKey)
-            putString(TTS + API_KEY, stored.tts.apiKey)
+            putString(TTS + API_KEY, stored.tts.silicon.apiKey)
+            putString(TTS_DOUBAO + API_KEY, stored.tts.doubao.apiKey)
             putString(REALTIME + API_KEY, stored.realtime.apiKey)
             putBoolean(MEMORY_EMBEDDING_ENABLED, stored.memoryEmbedding.enabled)
             putString(MEMORY_EMBEDDING + BASE_URL, stored.memoryEmbedding.baseUrl)
@@ -120,11 +135,25 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
         val safeRealtime = realtimeVoice.takeIf {
             dev.xiaoman.app.voice.VoiceRouting.realtimeSupports(rawRealtime.baseUrl, it)
         } ?: defaults.realtime.voice
+        val chat = model(CHAT)
+        val operator = model(OPERATOR)
         return AppSettings(
-            chat = model(CHAT),
-            operator = model(OPERATOR),
+            chat = chat,
+            operator = operator,
+            // 档案里已有的其他厂商配置原样读回；当前这套以 chat / operator 为准。
+            chatVendors = vendorProfiles("chat") + (chat.vendor to chat),
+            operatorVendors = vendorProfiles("operator") + (operator.vendor to operator),
             asr = voice(ASR, defaults.asr),
-            tts = voice(TTS, defaults.tts).copy(voice = unified),
+            tts = TtsSettings(
+                provider = plain.getString(TTS_PROVIDER, null)
+                    ?.let { name -> TtsProvider.entries.firstOrNull { it.name == name } }
+                    ?: defaults.tts.provider,
+                silicon = voice(TTS, defaults.tts.silicon),
+                doubao = voice(TTS_DOUBAO, defaults.tts.doubao).copy(
+                    provider = TtsProvider.DOUBAO,
+                    resourceId = plain.getString(TTS_DOUBAO_RESOURCE_ID, null) ?: defaults.tts.doubao.resourceId,
+                ),
+            ),
             realtime = rawRealtime.copy(voice = safeRealtime),
             realtimeEnabled = plain.getBoolean(REALTIME_ENABLED, defaults.realtimeEnabled),
             memoryEmbedding = MemoryEmbeddingSettings(
@@ -299,18 +328,86 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
         putFloat(prefix + SPEED, v.speed)
     }
 
-    private fun model(prefix: String) = ModelSettings(
-        baseUrl = plain.getString(prefix + BASE_URL, null) ?: ModelSettings.DEFAULT_BASE_URL,
-        model = plain.getString(prefix + MODEL, null).orEmpty(),
-        apiKey = secret.getString(prefix + API_KEY, null).orEmpty(),
-        temperature = plain.getString(prefix + TEMPERATURE, null)?.toDoubleOrNull(),
-    )
+    /** 两套朗读配置分开存；硅基继续用旧的 `tts.*` 键，旧安装升级后配置不丢。 */
+    private fun SharedPreferences.Editor.putTts(t: TtsSettings) {
+        putString(TTS_PROVIDER, t.provider.name)
+        putVoice(TTS, t.silicon)
+        putVoice(TTS_DOUBAO, t.doubao)
+        putString(TTS_DOUBAO_RESOURCE_ID, t.doubao.resourceId.trim())
+    }
+
+    private fun model(prefix: String): ModelSettings {
+        val baseUrl = plain.getString(prefix + BASE_URL, null) ?: ModelSettings.DEFAULT_BASE_URL
+        // 旧版本没存厂商：按地址认回预设；认不出就当自定义，别把用户的地址塞进方舟预设。
+        val vendor = plain.getString(prefix + VENDOR, null)
+            ?.let { name -> ModelVendor.entries.firstOrNull { it.name == name } }
+            ?: inferVendor(baseUrl)
+        val protocol = plain.getString(prefix + PROTOCOL, null)
+            ?.let { name -> ApiProtocol.entries.firstOrNull { it.name == name } }
+            ?: vendor.protocol
+        return ModelSettings(
+            baseUrl = baseUrl,
+            model = plain.getString(prefix + MODEL, null).orEmpty(),
+            apiKey = secret.getString(prefix + API_KEY, null).orEmpty(),
+            temperature = plain.getString(prefix + TEMPERATURE, null)?.toDoubleOrNull(),
+            vendor = vendor,
+            protocol = protocol,
+        )
+    }
+
+    private fun inferVendor(baseUrl: String): ModelVendor {
+        val url = baseUrl.trimEnd('/')
+        return ModelVendor.entries.firstOrNull {
+            it != ModelVendor.CUSTOM && it.baseUrl.trimEnd('/').equals(url, ignoreCase = true)
+        } ?: ModelVendor.CUSTOM
+    }
 
     private fun SharedPreferences.Editor.putModel(prefix: String, m: ModelSettings) {
         putString(prefix + BASE_URL, m.baseUrl)
         putString(prefix + MODEL, m.model)
         putString(prefix + TEMPERATURE, m.temperature?.toString())
+        putString(prefix + VENDOR, m.vendor.name)
+        putString(prefix + PROTOCOL, m.protocol.name)
     }
+
+    /** 每个厂商一份聊天/操作配置；只写不删，切厂商不会抹掉其他厂商。 */
+    private fun SharedPreferences.Editor.putVendors(role: String, profiles: Map<ModelVendor, ModelSettings>) {
+        profiles.forEach { (vendor, m) ->
+            val prefix = vendorPrefix(role, vendor)
+            putString(prefix + BASE_URL, m.baseUrl)
+            putString(prefix + MODEL, m.model)
+            putString(prefix + TEMPERATURE, m.temperature?.toString())
+            putString(prefix + PROTOCOL, m.protocol.name)
+        }
+    }
+
+    private fun SharedPreferences.Editor.putVendorKeys(role: String, profiles: Map<ModelVendor, ModelSettings>) {
+        profiles.forEach { (vendor, m) -> putString(vendorPrefix(role, vendor) + API_KEY, m.apiKey) }
+    }
+
+    private fun vendorProfiles(role: String): Map<ModelVendor, ModelSettings> {
+        val result = LinkedHashMap<ModelVendor, ModelSettings>()
+        for (vendor in ModelVendor.entries) {
+            val prefix = vendorPrefix(role, vendor)
+            val present = plain.contains(prefix + BASE_URL) || plain.contains(prefix + MODEL) ||
+                plain.contains(prefix + TEMPERATURE) || secret.contains(prefix + API_KEY)
+            if (!present) continue
+            val protocol = plain.getString(prefix + PROTOCOL, null)
+                ?.let { name -> ApiProtocol.entries.firstOrNull { it.name == name } }
+                ?: vendor.protocol
+            result[vendor] = ModelSettings(
+                baseUrl = plain.getString(prefix + BASE_URL, null) ?: vendor.baseUrl,
+                model = plain.getString(prefix + MODEL, null).orEmpty(),
+                apiKey = secret.getString(prefix + API_KEY, null).orEmpty(),
+                temperature = plain.getString(prefix + TEMPERATURE, null)?.toDoubleOrNull(),
+                vendor = vendor,
+                protocol = protocol,
+            )
+        }
+        return result
+    }
+
+    private fun vendorPrefix(role: String, vendor: ModelVendor) = "vendor.$role.${vendor.name}."
 
     companion object {
         private const val TAG = "Xiaoman"
@@ -320,6 +417,9 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
         private const val OPERATOR = "operator."
         private const val ASR = "asr."
         private const val TTS = "tts."
+        private const val TTS_DOUBAO = "tts.doubao."
+        private const val TTS_PROVIDER = "tts.provider"
+        private const val TTS_DOUBAO_RESOURCE_ID = "tts.doubao.resourceId"
         private const val REALTIME = "realtime."
         private const val REALTIME_ENABLED = "realtime.enabled"
         private const val MEMORY_EMBEDDING = "memoryEmbedding."
@@ -328,6 +428,8 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
         private const val MODEL = "model"
         private const val API_KEY = "apiKey"
         private const val TEMPERATURE = "temperature"
+        private const val VENDOR = "vendor"
+        private const val PROTOCOL = "protocol"
         private const val VOICE = "voice"
         private const val SPEED = "speed"
         private const val IMAGE_MODEL = "image.model"

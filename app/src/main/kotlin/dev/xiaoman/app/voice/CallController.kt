@@ -722,8 +722,8 @@ class CallController(
         _state.value = _state.value.copy(phase = CallState.Phase.SPEAKING, message = null)
         _level.value = 0f
         val current = settings()
-        // 人格设定里没显式选音色时按性别取默认（女 claire / 男 alex）。
-        val tts = current.tts.copy(voice = current.speechVoice)
+        // 按当前朗读引擎换算音色；硅基与豆包 的 voice id 不通用。
+        val tts = current.ttsRequest
         if (!TtsScript.readable(text)) {
             // 整条都在括号里，没什么可念的：直接回到听。
             _state.value = _state.value.copy(phase = CallState.Phase.LISTENING)
@@ -732,7 +732,7 @@ class CallController(
         noteTurn(fromMe = false, text = text)
         spoken.remember(text)
         try {
-            engine.stream(tts, text) { _, bytes ->
+            engine.stream(tts, text, fallback = current.ttsFallback) { _, bytes ->
                 if (!_state.value.active || _state.value.phase != CallState.Phase.SPEAKING) return@stream
                 playClip { done -> speaker.play(bytes, done) }
             }

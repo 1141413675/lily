@@ -207,8 +207,14 @@ fun PersonaScreen(
 
         PersonaCard(stringResource(R.string.persona_voice)) {
             val clones by graph.clones.voices.collectAsStateWithLifecycle()
-            // 实际音色：显式选择优先；留空时按性别取默认（女 claire / 男 alex）。
-            val current = Voices.effective(persona.voice, persona.gender)
+            // 实际音色：显式选择优先；留空时按性别取默认（硅基 claire/alex，豆包 Vivi/云舟）。
+            val provider = settings.tts.provider
+            val current = when {
+                provider == dev.xiaoman.app.settings.TtsProvider.DOUBAO && Voices.isDoubao(persona.voice.trim()) ->
+                    persona.voice.trim()
+                provider == dev.xiaoman.app.settings.TtsProvider.DOUBAO -> Voices.doubaoDefault(persona.gender)
+                else -> Voices.effective(persona.voice, persona.gender)
+            }
             val currentLabel = Voices.of(current)?.let { "${it.label}（${it.desc}）" }
                 ?: clones.firstOrNull { it.uri == current }?.let { "克隆 · ${it.name}" }
                 ?: Voices.label(current)
@@ -220,7 +226,14 @@ fun PersonaScreen(
                     color = MaterialTheme.colorScheme.error,
                 )
                 TextButton(
-                    onClick = { update(persona.copy(voice = Voices.defaultVoice(persona.gender), voiceChosen = true)) },
+                    onClick = {
+                        val fallback = if (provider == dev.xiaoman.app.settings.TtsProvider.DOUBAO) {
+                            Voices.doubaoDefault(persona.gender)
+                        } else {
+                            Voices.defaultVoice(persona.gender)
+                        }
+                        update(persona.copy(voice = fallback, voiceChosen = true))
+                    },
                     modifier = Modifier.tapTarget(),
                 ) { Text("换成${persona.gender.label}声") }
             }
@@ -251,7 +264,8 @@ fun PersonaScreen(
                         }
                         hint = null
                         previewVoice = current
-                        val voice = settings.tts.copy(voice = current, speed = speed)
+                        // 试听同样走当前引擎，音色按供应商换算，切到豆包后不会再把硅基 id 发过去。
+                        val voice = settings.tts.request(current, persona.gender)
                         scope.launch {
                             try {
                                 val audio = withContext(Dispatchers.IO) { api.speak(voice, PREVIEW_LINE) }
@@ -271,7 +285,10 @@ fun PersonaScreen(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            VoiceGroup("女声", Voices.FEMALE, current, previewVoice, settings.tts.configured,
+            // 音色列表跟着引擎走：两套 voice id 不通用，混着列出来点了也会报错。
+            val femaleVoices = if (provider == dev.xiaoman.app.settings.TtsProvider.DOUBAO) Voices.DOUBAO_FEMALE else Voices.FEMALE
+            val maleVoices = if (provider == dev.xiaoman.app.settings.TtsProvider.DOUBAO) Voices.DOUBAO_MALE else Voices.MALE
+            VoiceGroup("女声", femaleVoices, current, previewVoice, settings.tts.configured,
                 onSelect = { update(persona.copy(voice = it, voiceChosen = true)) },
                 onNeedTts = { hint = context.getString(R.string.persona_voice_preview_need_tts) },
                 onPreview = { option ->
@@ -281,7 +298,7 @@ fun PersonaScreen(
                     } else {
                         hint = null
                         previewVoice = option.id
-                        val voice = settings.tts.copy(voice = option.id, speed = speed)
+                        val voice = settings.tts.request(option.id, persona.gender)
                         scope.launch {
                             try {
                                 val audio = withContext(Dispatchers.IO) { api.speak(voice, PREVIEW_LINE) }
@@ -293,7 +310,7 @@ fun PersonaScreen(
                         }
                     }
                 })
-            VoiceGroup("男声", Voices.MALE, current, previewVoice, settings.tts.configured,
+            VoiceGroup("男声", maleVoices, current, previewVoice, settings.tts.configured,
                 onSelect = { update(persona.copy(voice = it, voiceChosen = true)) },
                 onNeedTts = { hint = context.getString(R.string.persona_voice_preview_need_tts) },
                 onPreview = { option ->
@@ -303,7 +320,7 @@ fun PersonaScreen(
                     } else {
                         hint = null
                         previewVoice = option.id
-                        val voice = settings.tts.copy(voice = option.id, speed = speed)
+                        val voice = settings.tts.request(option.id, persona.gender)
                         scope.launch {
                             try {
                                 val audio = withContext(Dispatchers.IO) { api.speak(voice, PREVIEW_LINE) }
@@ -331,7 +348,8 @@ fun PersonaScreen(
                     steps = 3,
                     onValueChangeFinished = {
                         if (settings.tts.speed != speed) {
-                            if (!save(settings.copy(tts = settings.tts.copy(speed = speed)))) {
+                            // 语速两套引擎共用：保存时同时写进硅基与豆包 的配置。
+                            if (!save(settings.copy(tts = settings.tts.withSpeed(speed)))) {
                                 speed = settings.tts.speed
                             }
                         }

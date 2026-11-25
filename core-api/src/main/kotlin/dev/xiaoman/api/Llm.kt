@@ -8,8 +8,18 @@ import kotlinx.serialization.json.JsonObject
 enum class ModelRole { CHAT, OPERATOR }
 
 /**
+ * How a vendor speaks HTTP. [OPENAI] is the `/chat/completions` shape used by most vendors
+ * (Volcano Ark, DeepSeek, Kimi, GLM, Bailian, MiniMax, SiliconFlow, OpenRouter, Gemini's
+ * compatibility endpoint, …). [ANTHROPIC] is Anthropic's own `/messages` shape, which is not
+ * OpenAI-compatible and therefore needs its own client.
+ */
+@Serializable
+enum class ApiProtocol { OPENAI, ANTHROPIC }
+
+/**
  * An OpenAI-compatible endpoint, e.g. Volcano Ark `https://ark.cn-beijing.volces.com/api/v3`,
- * Alibaba Bailian, OpenRouter, or a local vLLM/Ollama server.
+ * Alibaba Bailian, OpenRouter, or a local vLLM/Ollama server; or an Anthropic `/messages`
+ * endpoint when [protocol] is [ApiProtocol.ANTHROPIC].
  */
 @Serializable
 data class ModelConfig(
@@ -22,8 +32,9 @@ data class ModelConfig(
     val maxTokens: Int? = null,
     val timeoutSeconds: Long = 120,
     val extraHeaders: Map<String, String> = emptyMap(),
+    val protocol: ApiProtocol = ApiProtocol.OPENAI,
 ) {
-    override fun toString() = "ModelConfig(role=$role, baseUrl=$baseUrl, model=$model, apiKey=***)"
+    override fun toString() = "ModelConfig(role=$role, baseUrl=$baseUrl, model=$model, protocol=$protocol, apiKey=***)"
 }
 
 @Serializable

@@ -26,6 +26,7 @@ class TtsEngine(private val api: VoiceApi = VoiceApi()) {
         config: VoiceSettings,
         text: String,
         instruction: String = TtsScript.performance(text),
+        fallback: VoiceSettings? = null,
         onClip: suspend (index: Int, bytes: ByteArray) -> Unit,
     ): Int = coroutineScope {
         val sentences = TtsScript.sentences(TtsScript.clean(text)).toMutableList()
@@ -47,7 +48,8 @@ class TtsEngine(private val api: VoiceApi = VoiceApi()) {
                         Log.w(TAG, "tts: stripped direction wording <${TtsScript.directionLeak(raw)}> before synthesis")
                     }
                     if (!TtsScript.readable(sentence)) continue
-                    val bytes = api.speak(config, sentence, instruction)
+                    // 豆包单句失败时用硅基兜底，避免整通电话静音；两句都失败才向上抛。
+                    val bytes = api.speak(config, sentence, instruction, fallback)
                     checkDuration(sentence, bytes, config)
                     clips.send(bytes)
                 }

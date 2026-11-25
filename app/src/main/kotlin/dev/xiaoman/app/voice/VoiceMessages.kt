@@ -186,7 +186,8 @@ class VoiceMessages(
         } ?: text)
         scope.launch {
             val current = settings()
-            val tts = current.tts.copy(voice = current.speechVoice)
+            // 按当前引擎换算音色（硅基 / 豆包 的 voice id 不通用），切换后立刻用新引擎。
+            val tts = current.ttsRequest
             if (!tts.configured) {
                 session.replace(id, fallback())
                 return@launch
@@ -199,7 +200,7 @@ class VoiceMessages(
             val buffer = java.io.ByteArrayOutputStream()
             val stopped = object : Exception() {}
             try {
-                engine.stream(tts, text, instruction) { _, bytes ->
+                engine.stream(tts, text, instruction, current.ttsFallback) { _, bytes ->
                     buffer.write(bytes)
                     // 用户点了停止或离开聊天：不再为没人听的部分发请求，已合成的留作气泡。
                     if (!player.playClipAwait(id, clipDir, bytes)) throw stopped

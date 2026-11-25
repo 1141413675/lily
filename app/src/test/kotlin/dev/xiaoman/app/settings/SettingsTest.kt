@@ -24,9 +24,14 @@ class SettingsTest {
         context.getSharedPreferences("secret-test", Context.MODE_PRIVATE),
     )
 
+    private val chat = ModelSettings(model = "doubao-chat", apiKey = key, temperature = 0.3)
+    private val operatorModel =
+        ModelSettings(baseUrl = "https://example.com/v1", model = "doubao-vision", apiKey = key)
     private val sample = AppSettings(
-        chat = ModelSettings(model = "doubao-chat", apiKey = key, temperature = 0.3),
-        operator = ModelSettings(baseUrl = "https://example.com/v1", model = "doubao-vision", apiKey = key),
+        chat = chat,
+        operator = operatorModel,
+        chatVendors = mapOf(chat.vendor to chat),
+        operatorVendors = mapOf(operatorModel.vendor to operatorModel),
         maxSteps = 12,
         learnFromSuccess = false,
     )
@@ -40,11 +45,10 @@ class SettingsTest {
     @Test fun `round trip keeps every field and keys stay out of the plain file`() {
         store().save(sample)
         val loaded = store().current
-        // 朗读与通话音色在升级后统一为一份：取朗读那处，写回朗读并记进人格设定。
-        // 实时通道是 DashScope，它不认识 SiliconFlow 音色名，所以保留自己的预置音色。
-        val voice = sample.tts.voice
+        // 朗读与通话音色在升级后统一为一份：取当前朗读引擎那处，写回朗读并记进人格设定。
+        // 实时通道是 DashScope，它不认识朗读引擎音色名，所以保留自己的预置音色。
+        val voice = sample.tts.active.voice
         val expected = sample.copy(
-            tts = sample.tts.copy(voice = voice),
             realtime = sample.realtime,
             persona = sample.persona.copy(voice = voice),
             // 两处旧音色不同，首次统一时给用户一条确认提示。
@@ -72,10 +76,74 @@ class SettingsTest {
         val clone = "speech:my-voice:abc:xyz"
         store.save(base.copy(persona = base.persona.copy(voice = clone)))
         val saved = store.current
-        assertEquals(clone, saved.tts.voice)
+        // 统一音色写在人格里；朗读按当前引擎换算后会拿到克隆 uri。
+        assertEquals(clone, saved.persona.voice)
+        assertEquals(clone, saved.ttsRequest.voice)
         // DashScope 实时通道保留原音色，不静默写成克隆 uri。
         assertEquals(AppSettings().realtime.voice, saved.realtime.voice)
         assertEquals(clone, saved.speechVoice)
+    }
+
+    @Test fun `switching text vendor keeps every vendor's key`() {
+        val store = store()
+        val base = store.current
+        val ark = base.chat.copy(
+            model = "doubao-seed-1-6-250615",
+            apiKey = "ark-keep-me",
+            vendor = ModelVendor.ARK,
+        )
+        store.save(base.copy(chat = ark, chatVendors = base.chatVendors + (ModelVendor.ARK to ark)))
+
+        val deepseek = ModelSettings(
+            baseUrl = ModelVendor.DEEPSEEK.baseUrl,
+            model = "deepseek-chat",
+            apiKey = "sk-deepseek-keep-me",
+            vendor = ModelVendor.DEEPSEEK,
+        )
+        store.save(
+            store.current.copy(
+                chat = deepseek,
+                chatVendors = store.current.chatVendors + (ModelVendor.DEEPSEEK to deepseek),
+            ),
+        )
+
+        val current = store.current
+        assertEquals("sk-deepseek-keep-me", current.chat.apiKey)
+        assertEquals("ark-keep-me", current.chatVendors[ModelVendor.ARK]?.apiKey)
+
+        // 切回方舟：地址、模型、Key 都从档案里回来，另一家的 Key 也还在。
+        val back = SettingsForm.of(current).withChatVendor(ModelVendor.ARK)
+        assertEquals(ModelVendor.ARK, back.chat.vendor)
+        assertEquals("ark-keep-me", back.chat.apiKey)
+        assertEquals("doubao-seed-1-6-250615", back.chat.model)
+        store.save(back.toSettings()!!)
+        val saved = store.current
+        assertEquals("ark-keep-me", saved.chat.apiKey)
+        assertEquals("sk-deepseek-keep-me", saved.chatVendors[ModelVendor.DEEPSEEK]?.apiKey)
+        // 两把 Key 都参与脱敏，不会写进 trace 或日志。
+        assertTrue("ark-keep-me" in saved.secrets)
+        assertTrue("sk-deepseek-keep-me" in saved.secrets)
+    }
+
+    @Test fun `custom protocol survives a round trip`() {
+        val store = store()
+        val custom = ModelSettings(
+            baseUrl = "https://gateway.example.com/v1",
+            model = "claude-proxy",
+            apiKey = "custom-key",
+            vendor = ModelVendor.CUSTOM,
+            protocol = dev.xiaoman.api.ApiProtocol.ANTHROPIC,
+        )
+        store.save(store.current.copy(chat = custom))
+        val loaded = store.current
+        assertEquals(ModelVendor.CUSTOM, loaded.chat.vendor)
+        assertEquals(dev.xiaoman.api.ApiProtocol.ANTHROPIC, loaded.chat.protocol)
+        assertEquals("https://gateway.example.com/v1", loaded.chat.baseUrl)
+        // 请求配置也带上了声明的协议。
+        assertEquals(
+            dev.xiaoman.api.ApiProtocol.ANTHROPIC,
+            loaded.chat.toModelConfig(dev.xiaoman.api.ModelRole.CHAT).protocol,
+        )
     }
 
     @Test fun `toString never shows the api key`() {

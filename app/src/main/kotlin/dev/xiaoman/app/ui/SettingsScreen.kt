@@ -7,6 +7,7 @@ import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -25,6 +26,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.automirrored.outlined.Chat
@@ -39,11 +41,14 @@ import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
@@ -55,6 +60,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -69,12 +75,19 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.xiaoman.api.ApiProtocol
+import dev.xiaoman.api.ModelConfig
+import dev.xiaoman.api.ModelRole
 import dev.xiaoman.app.AppGraph
 import dev.xiaoman.app.R
 import dev.xiaoman.app.appearance.ThemeMode
 import dev.xiaoman.app.settings.ImageSettings
+import dev.xiaoman.app.settings.ModelVendor
 import dev.xiaoman.app.settings.ReplyMode
 import dev.xiaoman.app.settings.SettingsForm
+import dev.xiaoman.app.settings.TtsProvider
+import dev.xiaoman.llm.ModelCatalog
+import kotlinx.coroutines.launch
 
 /** 「我的」汇集个人资料和全局设置。 */
 @Composable
@@ -662,25 +675,90 @@ internal fun VoiceSection(voice: SettingsForm.VoiceForm, showVoice: Boolean, onC
 }
 
 @Composable
-internal fun ModelSection(model: SettingsForm.ModelForm, onChange: (SettingsForm.ModelForm) -> Unit) {
+internal fun ModelSection(
+    model: SettingsForm.ModelForm,
+    onChange: (SettingsForm.ModelForm) -> Unit,
+    onVendor: (ModelVendor) -> Unit,
+) {
     var showKey by remember { mutableStateOf(false) }
+    var vendorMenu by remember { mutableStateOf(false) }
+    var modelMenu by remember { mutableStateOf(false) }
+    // 接口拉到的模型按厂商缓存；拉不到就退回内置默认，保存不依赖它。
+    var fetched by remember { mutableStateOf<Map<ModelVendor, List<String>>>(emptyMap()) }
+    var failed by remember { mutableStateOf<Set<ModelVendor>>(emptySet()) }
+    var fetching by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val custom = model.vendor == ModelVendor.CUSTOM
+    val choices = (model.vendor.models + fetched[model.vendor].orEmpty()).distinct()
+
+    Box {
+        OutlinedButton(onClick = { vendorMenu = true }, modifier = Modifier.fillMaxWidth()) {
+            Text(model.vendor.displayName, modifier = Modifier.weight(1f))
+            Icon(Icons.Filled.ArrowDropDown, contentDescription = stringResource(R.string.models_pick_vendor))
+        }
+        DropdownMenu(expanded = vendorMenu, onDismissRequest = { vendorMenu = false }) {
+            ModelVendor.entries.forEach { vendor ->
+                DropdownMenuItem(
+                    text = { Text(vendor.displayName) },
+                    onClick = {
+                        vendorMenu = false
+                        onVendor(vendor)
+                    },
+                )
+            }
+        }
+    }
     OutlinedTextField(
         value = model.baseUrl,
-        onValueChange = { onChange(model.copy(baseUrl = it)) },
+        onValueChange = { if (custom) onChange(model.copy(baseUrl = it)) },
+        readOnly = !custom,
         label = { Text(stringResource(R.string.settings_base_url)) },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
         singleLine = true,
         trailingIcon = { CopyUrlButton(model.baseUrl, context) },
         modifier = Modifier.fillMaxWidth(),
     )
-    OutlinedTextField(
-        value = model.model,
-        onValueChange = { onChange(model.copy(model = it)) },
-        label = { Text(stringResource(R.string.settings_model)) },
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
-    )
+    Box {
+        OutlinedTextField(
+            value = model.model,
+            onValueChange = { onChange(model.copy(model = it)) },
+            label = { Text(stringResource(R.string.settings_model)) },
+            singleLine = true,
+            trailingIcon = {
+                IconButton(onClick = { modelMenu = true }, enabled = choices.isNotEmpty()) {
+                    Icon(Icons.Filled.ArrowDropDown, contentDescription = stringResource(R.string.models_pick_model))
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        DropdownMenu(expanded = modelMenu, onDismissRequest = { modelMenu = false }) {
+            choices.forEach { name ->
+                DropdownMenuItem(
+                    text = { Text(name) },
+                    onClick = {
+                        modelMenu = false
+                        onChange(model.copy(model = name))
+                    },
+                )
+            }
+        }
+    }
+    if (custom) {
+        Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+            FilterChip(
+                selected = model.protocol == ApiProtocol.OPENAI,
+                onClick = { onChange(model.copy(protocol = ApiProtocol.OPENAI)) },
+                label = { Text(stringResource(R.string.models_protocol_openai)) },
+            )
+            FilterChip(
+                selected = model.protocol == ApiProtocol.ANTHROPIC,
+                onClick = { onChange(model.copy(protocol = ApiProtocol.ANTHROPIC)) },
+                label = { Text(stringResource(R.string.models_protocol_anthropic)) },
+            )
+        }
+        SettingsNote(stringResource(R.string.models_protocol_hint))
+    }
     OutlinedTextField(
         value = model.apiKey,
         onValueChange = { onChange(model.copy(apiKey = it)) },
@@ -705,6 +783,107 @@ internal fun ModelSection(model: SettingsForm.ModelForm, onChange: (SettingsForm
         isError = !model.temperatureValid,
         supportingText = if (!model.temperatureValid) ({ Text(stringResource(R.string.settings_invalid_number)) }) else null,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    if (!custom) {
+        TextButton(
+            enabled = !fetching && model.apiKey.isNotBlank(),
+            onClick = {
+                val vendor = model.vendor
+                fetching = true
+                scope.launch {
+                    val names = ModelCatalog.list(
+                        ModelConfig(
+                            role = ModelRole.CHAT,
+                            baseUrl = model.baseUrl,
+                            model = model.model,
+                            apiKey = model.apiKey,
+                            protocol = model.protocol,
+                        ),
+                    )
+                    fetched = fetched + (vendor to names)
+                    failed = if (names.isEmpty()) failed + vendor else failed - vendor
+                    fetching = false
+                }
+            },
+        ) {
+            Text(stringResource(if (fetching) R.string.models_fetching else R.string.models_fetch_models))
+        }
+    }
+    if (model.vendor in failed) SettingsNote(stringResource(R.string.models_fetch_failed))
+    SettingsNote(stringResource(R.string.models_key_hint, model.vendor.keyHintText))
+}
+
+/** 朗读引擎：硅基 / 豆包 2.0 两套配置分开存，切换只改 provider，另一套原样保留。 */
+@Composable
+internal fun TtsSection(form: SettingsForm.TtsForm, onChange: (SettingsForm.TtsForm) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+        FilterChip(
+            selected = form.provider == TtsProvider.SILICONFLOW,
+            onClick = { onChange(form.copy(provider = TtsProvider.SILICONFLOW)) },
+            label = { Text(stringResource(R.string.models_tts_siliconflow)) },
+        )
+        FilterChip(
+            selected = form.provider == TtsProvider.DOUBAO,
+            onClick = { onChange(form.copy(provider = TtsProvider.DOUBAO)) },
+            label = { Text(stringResource(R.string.models_tts_doubao)) },
+        )
+    }
+    if (form.provider == TtsProvider.DOUBAO) {
+        DoubaoTtsSection(form.doubao) { onChange(form.copy(doubao = it)) }
+        SettingsNote(stringResource(R.string.models_tts_doubao_hint))
+    } else {
+        VoiceSection(form.silicon, showVoice = true) { onChange(form.copy(silicon = it)) }
+        SettingsNote(stringResource(R.string.models_voice_hint))
+    }
+}
+
+/**
+ * 豆包语音合成 2.0 朗读：WebSocket 地址 + API Key + Resource ID + speaker（音色 id）。
+ * 这四项与方舟 Ark 的文本模型 Key 是两套体系，不能互相顶替。
+ */
+@Composable
+internal fun DoubaoTtsSection(form: SettingsForm.DoubaoForm, onChange: (SettingsForm.DoubaoForm) -> Unit) {
+    var showToken by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    OutlinedTextField(
+        value = form.baseUrl,
+        onValueChange = { onChange(form.copy(baseUrl = it)) },
+        label = { Text(stringResource(R.string.settings_base_url)) },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+        singleLine = true,
+        trailingIcon = { CopyUrlButton(form.baseUrl, context) },
+        modifier = Modifier.fillMaxWidth(),
+    )
+    OutlinedTextField(
+        value = form.token,
+        onValueChange = { onChange(form.copy(token = it)) },
+        label = { Text(stringResource(R.string.models_tts_access_token)) },
+        singleLine = true,
+        visualTransformation = if (showToken) VisualTransformation.None else PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
+        trailingIcon = {
+            IconButton(onClick = { showToken = !showToken }) {
+                Icon(
+                    if (showToken) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                    contentDescription = stringResource(if (showToken) R.string.settings_hide_key else R.string.settings_show_key),
+                )
+            }
+        },
+        modifier = Modifier.fillMaxWidth(),
+    )
+    OutlinedTextField(
+        value = form.resourceId,
+        onValueChange = { onChange(form.copy(resourceId = it)) },
+        label = { Text(stringResource(R.string.models_tts_resource_id)) },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    OutlinedTextField(
+        value = form.voice,
+        onValueChange = { onChange(form.copy(voice = it)) },
+        label = { Text(stringResource(R.string.models_tts_voice_type)) },
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
     )

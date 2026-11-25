@@ -1,6 +1,7 @@
 package dev.xiaoman.app.settings
 
 import dev.xiaoman.api.AgentConfig
+import dev.xiaoman.api.ApiProtocol
 import dev.xiaoman.api.ModelConfig
 import dev.xiaoman.api.ModelRole
 import kotlinx.serialization.Serializable
@@ -8,10 +9,14 @@ import java.net.URI
 
 /** One OpenAI-compatible endpoint as typed into Settings. [toString] never shows [apiKey]. */
 data class ModelSettings(
-    val baseUrl: String = DEFAULT_BASE_URL,
+    val baseUrl: String = ModelSettings.DEFAULT_BASE_URL,
     val model: String = "",
     val apiKey: String = "",
     val temperature: Double? = null,
+    /** 选中的厂商预设；决定默认地址、常用模型与走哪套协议。 */
+    val vendor: ModelVendor = ModelVendor.ARK,
+    /** 实际协议；预设厂商固定，自定义时可声明 OpenAI 兼容或 Anthropic 原生。 */
+    val protocol: ApiProtocol = ApiProtocol.OPENAI,
 ) {
     val configured: Boolean get() = baseUrl.isNotBlank() && model.isNotBlank() && apiKey.isNotBlank()
 
@@ -21,10 +26,12 @@ data class ModelSettings(
         model = model.trim(),
         apiKey = apiKey.trim(),
         temperature = temperature,
+        protocol = protocol,
     )
 
     override fun toString() =
-        "ModelSettings(baseUrl=$baseUrl, model=$model, apiKey=${if (apiKey.isEmpty()) "<unset>" else "***"}, temperature=$temperature)"
+        "ModelSettings(vendor=$vendor, protocol=$protocol, baseUrl=$baseUrl, model=$model, " +
+            "apiKey=${if (apiKey.isEmpty()) "<unset>" else "***"}, temperature=$temperature)"
 
     companion object {
         /** Volcano Ark. */
@@ -75,9 +82,15 @@ data class MemoryEmbeddingSettings(
     }
 }
 
+/** 朗读引擎。两套配置都留在本机，切换只改 provider，另一套的地址/Key/音色不会丢。 */
+enum class TtsProvider { SILICONFLOW, DOUBAO }
+
 /**
- * One OpenAI-compatible audio endpoint as typed into Settings: [VoiceSettings] for speech to text
- * (`/audio/transcriptions`) and text to speech (`/audio/speech`, [voice] is the speaker name).
+ * One audio endpoint as typed into Settings: [VoiceSettings] for speech to text
+ * (`/audio/transcriptions`) and text to speech. [provider] 只对朗读有意义：
+ * 硅基走 OpenAI 兼容的 `/audio/speech`；豆包走「豆包语音合成 2.0」的 WebSocket 双向流，
+ * 鉴权用 [apiKey]（`X-Api-Key`）与 [resourceId]（`X-Api-Resource-Id`），
+ * [voice] 是 2.0 音色 id（`*_uranus_bigtts`）。
  */
 data class VoiceSettings(
     val baseUrl: String = DEFAULT_BASE_URL,
@@ -85,15 +98,23 @@ data class VoiceSettings(
     val apiKey: String = "",
     val voice: String = "",
     /**
-     * 朗读语速；只对 CosyVoice2 生效。默认 1.1 比原速略快，更接近日常说话的节奏；
+     * 朗读语速；两套引擎都有对应参数。默认 1.1 比原速略快，更接近日常说话的节奏；
      * 设置页的滑杆直接改这个值，逐句合成时每句都用同一个语速。
      */
     val speed: Float = 1.1f,
+    val provider: TtsProvider = TtsProvider.SILICONFLOW,
+    /** 豆包才需要：模型版本，2.0 固定 `seed-tts-2.0`，放在 `X-Api-Resource-Id` 头里。 */
+    val resourceId: String = "",
 ) {
-    val configured: Boolean get() = baseUrl.isNotBlank() && model.isNotBlank() && apiKey.isNotBlank()
+    val configured: Boolean
+        get() = when (provider) {
+            TtsProvider.SILICONFLOW -> baseUrl.isNotBlank() && model.isNotBlank() && apiKey.isNotBlank()
+            TtsProvider.DOUBAO -> baseUrl.isNotBlank() && apiKey.isNotBlank() &&
+                resourceId.isNotBlank() && voice.isNotBlank()
+        }
 
     override fun toString() =
-        "VoiceSettings(baseUrl=$baseUrl, model=$model, apiKey=${if (apiKey.isEmpty()) "<unset>" else "***"}, voice=$voice, speed=$speed)"
+        "VoiceSettings(baseUrl=$baseUrl, model=$model, apiKey=${if (apiKey.isEmpty()) "<unset>" else "***"}, voice=$voice, speed=$speed, provider=$provider)"
 
     companion object {
         /** SiliconFlow: both audio endpoints are OpenAI-compatible. */
@@ -103,10 +124,80 @@ data class VoiceSettings(
         /** 不在安装时写入具体音色：留空，实际音色由性别决定（见 Voices.effective）。 */
         const val DEFAULT_TTS_VOICE = ""
 
+        /** 豆包语音合成 2.0：WebSocket 双向流式（不是方舟 Ark，也不是 v1 的 api/v1/tts）。 */
+        const val DOUBAO_BASE_URL = "wss://openspeech.bytedance.com/api/v3/tts/bidirection"
+        const val DOUBAO_RESOURCE_ID = "seed-tts-2.0"
+
         /** Alibaba DashScope: OpenAI-Realtime-compatible event protocol, reachable from mainland China. */
         const val DEFAULT_REALTIME_BASE_URL = "wss://dashscope.aliyuncs.com/api-ws/v1/realtime"
         const val DEFAULT_REALTIME_MODEL = "qwen-omni-turbo-realtime"
         const val DEFAULT_REALTIME_VOICE = "Cherry"
+    }
+}
+
+/**
+ * 朗读设置：硅基与豆包 各留一份，[provider] 决定现在用哪套。切回去时音色、Key 都还在。
+ * 语速对两套共用（设置页只有一个滑杆），因此 [withSpeed] 会同时写两边。
+ */
+data class TtsSettings(
+    val provider: TtsProvider = TtsProvider.SILICONFLOW,
+    val silicon: VoiceSettings = VoiceSettings(model = VoiceSettings.DEFAULT_TTS_MODEL),
+    val doubao: VoiceSettings = VoiceSettings(
+        baseUrl = VoiceSettings.DOUBAO_BASE_URL,
+        resourceId = VoiceSettings.DOUBAO_RESOURCE_ID,
+        provider = TtsProvider.DOUBAO,
+    ),
+) {
+    /** 当前供应商的原始配置，设置页编辑的就是它。 */
+    val active: VoiceSettings
+        get() = when (provider) {
+            TtsProvider.SILICONFLOW -> silicon
+            TtsProvider.DOUBAO -> doubao.copy(provider = TtsProvider.DOUBAO)
+        }
+
+    val configured: Boolean get() = active.configured
+
+    val speed: Float get() = active.speed
+
+    fun withSpeed(value: Float): TtsSettings =
+        copy(silicon = silicon.copy(speed = value), doubao = doubao.copy(speed = value))
+
+    /** 多智能体按角色音色改配置时用：只改当前引擎那份，另一套原样留着。 */
+    fun withVoice(voice: String, speedValue: Float = speed): TtsSettings = when (provider) {
+        TtsProvider.SILICONFLOW -> copy(silicon = silicon.copy(voice = voice, speed = speedValue))
+        TtsProvider.DOUBAO -> copy(doubao = doubao.copy(voice = voice, speed = speedValue))
+    }
+
+    /**
+     * 发请求用的配置：人格里选的音色属于当前供应商就用它，否则退回该供应商自己的音色，
+     * 再不行按性别取默认。切换引擎后旧音色 id 不会把新引擎打成 400。
+     */
+    fun request(personaVoice: String, gender: dev.xiaoman.app.persona.Gender): VoiceSettings {
+        val picked = personaVoice.trim()
+        return when (provider) {
+            TtsProvider.SILICONFLOW -> {
+                val voice = when {
+                    picked.isEmpty() -> silicon.voice
+                    dev.xiaoman.app.persona.Voices.isSilicon(picked) -> picked
+                    else -> silicon.voice
+                }
+                silicon.copy(
+                    voice = voice.ifBlank { dev.xiaoman.app.persona.Voices.defaultVoice(gender) },
+                    provider = TtsProvider.SILICONFLOW,
+                )
+            }
+            TtsProvider.DOUBAO -> {
+                val voice = when {
+                    picked.isEmpty() -> doubao.voice
+                    dev.xiaoman.app.persona.Voices.isDoubao(picked) -> picked
+                    else -> doubao.voice
+                }
+                doubao.copy(
+                    voice = voice.ifBlank { dev.xiaoman.app.persona.Voices.doubaoDefault(gender) },
+                    provider = TtsProvider.DOUBAO,
+                )
+            }
+        }
     }
 }
 
@@ -172,8 +263,16 @@ data class RelationSettings(
 data class AppSettings(
     val chat: ModelSettings = ModelSettings(),
     val operator: ModelSettings = ModelSettings(),
+    /**
+     * 每个厂商各自的聊天配置。切换厂商只改 [chat]，这里的其他厂商（含 Key）原样保留，
+     * 切回去不用重填。当前生效的配置始终以 [chat] 为准。
+     */
+    val chatVendors: Map<ModelVendor, ModelSettings> = emptyMap(),
+    /** 操作模型同理，按厂商各存一份。 */
+    val operatorVendors: Map<ModelVendor, ModelSettings> = emptyMap(),
     val asr: VoiceSettings = VoiceSettings(model = VoiceSettings.DEFAULT_ASR_MODEL),
-    val tts: VoiceSettings = VoiceSettings(model = VoiceSettings.DEFAULT_TTS_MODEL, voice = VoiceSettings.DEFAULT_TTS_VOICE),
+    /** 朗读引擎：硅基 / 豆包 两套配置都保留，切换立即生效。 */
+    val tts: TtsSettings = TtsSettings(),
     /** Real-time full-duplex call channel; empty key means it is off and the hands-free fallback is used. */
     val realtime: VoiceSettings = VoiceSettings(
         baseUrl = VoiceSettings.DEFAULT_REALTIME_BASE_URL,
@@ -206,14 +305,40 @@ data class AppSettings(
 ) {
     val configured: Boolean get() = chat.configured && operator.configured
 
-    /** 实际用于朗读/语音消息的音色：人格设定里留空时按性别默认（女 claire / 男 alex）。 */
+    /** 实际用于朗读/语音消息的音色：人格设定里留空时按性别默认；豆包音色不送进硅基实时通道。 */
     val speechVoice: String
-        get() = dev.xiaoman.app.persona.Voices.effective(persona.voice, persona.gender)
+        get() = if (dev.xiaoman.app.persona.Voices.isDoubao(persona.voice.trim())) {
+            dev.xiaoman.app.persona.Voices.defaultVoice(persona.gender)
+        } else {
+            dev.xiaoman.app.persona.Voices.effective(persona.voice, persona.gender)
+        }
 
-    /** Values to mask in traces and logs. */
+    /** 本次朗读要用的接口配置（含供应商、音色、Resource ID）。 */
+    val ttsRequest: VoiceSettings get() = tts.request(persona.voice, persona.gender)
+
+    /** 豆包出错时的兜底：硅基还配着就用它，保证通话不会整段没声音。 */
+    val ttsFallback: VoiceSettings?
+        get() = if (tts.provider == TtsProvider.DOUBAO) {
+            tts.copy(provider = TtsProvider.SILICONFLOW)
+                .request(persona.voice, persona.gender)
+                .takeIf { it.configured }
+        } else {
+            null
+        }
+
+    /** Values to mask in traces and logs. 所有厂商的 Key 都算，包括暂时没在用的那几套。 */
     val secrets: List<String>
-        get() = listOf(chat.apiKey, operator.apiKey, asr.apiKey, tts.apiKey, realtime.apiKey, memoryEmbedding.apiKey)
-            .filter { it.isNotBlank() }
+        get() = buildList {
+            add(chat.apiKey)
+            add(operator.apiKey)
+            chatVendors.values.forEach { add(it.apiKey) }
+            operatorVendors.values.forEach { add(it.apiKey) }
+            add(asr.apiKey)
+            add(tts.silicon.apiKey)
+            add(tts.doubao.apiKey)
+            add(realtime.apiKey)
+            add(memoryEmbedding.apiKey)
+        }.filter { it.isNotBlank() }.distinct()
 
     fun agentConfig() = AgentConfig(maxSteps = maxSteps, learnFromSuccess = learnFromSuccess)
 
@@ -228,8 +353,11 @@ data class AppSettings(
 data class SettingsForm(
     val chat: ModelForm = ModelForm(),
     val operator: ModelForm = ModelForm(),
+    /** 其他厂商已经填好的聊天配置；切厂商时原样保留，切回即用。 */
+    val chatVendors: Map<ModelVendor, ModelSettings> = emptyMap(),
+    val operatorVendors: Map<ModelVendor, ModelSettings> = emptyMap(),
     val asr: VoiceForm = VoiceForm(model = VoiceSettings.DEFAULT_ASR_MODEL),
-    val tts: VoiceForm = VoiceForm(model = VoiceSettings.DEFAULT_TTS_MODEL, voice = VoiceSettings.DEFAULT_TTS_VOICE),
+    val tts: TtsForm = TtsForm(),
     val realtime: VoiceForm = VoiceForm(
         baseUrl = VoiceSettings.DEFAULT_REALTIME_BASE_URL,
         model = VoiceSettings.DEFAULT_REALTIME_MODEL,
@@ -256,19 +384,33 @@ data class SettingsForm(
         val model: String = "",
         val apiKey: String = "",
         val temperature: String = "",
+        val vendor: ModelVendor = ModelVendor.ARK,
+        val protocol: ApiProtocol = ApiProtocol.OPENAI,
     ) {
         val temperatureValid: Boolean get() = parseTemperature(temperature) != null || temperature.isBlank()
 
         fun toSettings(): ModelSettings? {
             val t = if (temperature.isBlank()) null else parseTemperature(temperature) ?: return null
-            return ModelSettings(baseUrl.trim(), model.trim(), apiKey.trim(), t)
+            return ModelSettings(baseUrl.trim(), model.trim(), apiKey.trim(), t, vendor, protocol)
         }
 
+        /** 切厂商时暂存当前输入；温度不合法也不阻挡切换，Key 与地址照留。 */
+        fun draft(): ModelSettings = ModelSettings(
+            baseUrl = baseUrl.trim(),
+            model = model.trim(),
+            apiKey = apiKey.trim(),
+            temperature = parseTemperature(temperature),
+            vendor = vendor,
+            protocol = protocol,
+        )
+
         override fun toString() =
-            "ModelForm(baseUrl=$baseUrl, model=$model, apiKey=${if (apiKey.isEmpty()) "<unset>" else "***"}, temperature=$temperature)"
+            "ModelForm(vendor=$vendor, protocol=$protocol, baseUrl=$baseUrl, model=$model, " +
+                "apiKey=${if (apiKey.isEmpty()) "<unset>" else "***"}, temperature=$temperature)"
 
         companion object {
-            fun of(s: ModelSettings) = ModelForm(s.baseUrl, s.model, s.apiKey, s.temperature?.toString().orEmpty())
+            fun of(s: ModelSettings) =
+                ModelForm(s.baseUrl, s.model, s.apiKey, s.temperature?.toString().orEmpty(), s.vendor, s.protocol)
         }
     }
 
@@ -288,16 +430,89 @@ data class SettingsForm(
         }
     }
 
+    /** 朗读两套引擎的表单：只编辑当前选中的那套，另一套原样留着。 */
+    data class TtsForm(
+        val provider: TtsProvider = TtsProvider.SILICONFLOW,
+        val silicon: VoiceForm = VoiceForm(model = VoiceSettings.DEFAULT_TTS_MODEL),
+        val doubao: DoubaoForm = DoubaoForm(),
+        val speed: Float = 1.1f,
+    ) {
+        fun toSettings() = TtsSettings(
+            provider = provider,
+            silicon = silicon.toSettings().copy(model = silicon.model.trim(), speed = speed),
+            doubao = doubao.toSettings(speed),
+        )
+
+        override fun toString() = "TtsForm(provider=$provider, silicon=$silicon, doubao=$doubao, speed=$speed)"
+
+        companion object {
+            fun of(t: TtsSettings) = TtsForm(
+                provider = t.provider,
+                silicon = VoiceForm.of(t.silicon),
+                doubao = DoubaoForm.of(t.doubao),
+                speed = t.active.speed,
+            )
+        }
+    }
+
+    /** 豆包 2.0 的必填项：API Key、Resource ID、speaker（音色 id）。 */
+    data class DoubaoForm(
+        val baseUrl: String = VoiceSettings.DOUBAO_BASE_URL,
+        val token: String = "",
+        val resourceId: String = VoiceSettings.DOUBAO_RESOURCE_ID,
+        val voice: String = "",
+    ) {
+        fun toSettings(speed: Float) = VoiceSettings(
+            baseUrl = baseUrl.trim(),
+            model = "",
+            apiKey = token.trim(),
+            voice = voice.trim(),
+            speed = speed,
+            provider = TtsProvider.DOUBAO,
+            resourceId = resourceId.trim(),
+        )
+
+        override fun toString() =
+            "DoubaoForm(baseUrl=$baseUrl, token=${if (token.isEmpty()) "<unset>" else "***"}, resourceId=$resourceId, voice=$voice)"
+
+        companion object {
+            fun of(s: VoiceSettings) = DoubaoForm(s.baseUrl, s.apiKey, s.resourceId, s.voice)
+        }
+    }
+
     val maxStepsValid: Boolean get() = maxSteps.trim().toIntOrNull()?.let { it in AppSettings.MAX_STEPS_RANGE } == true
+
+    /** 切聊天厂商：先把当前输入（含还没保存的 Key）存进档案，再换成目标厂商的配置。 */
+    fun withChatVendor(vendor: ModelVendor): SettingsForm {
+        if (vendor == chat.vendor) return this
+        val profiles = chatVendors + (chat.vendor to chat.draft())
+        return copy(chat = ModelForm.of(profiles[vendor] ?: ModelVendor.preset(vendor)), chatVendors = profiles)
+    }
+
+    /** 切操作模型厂商，规则同 [withChatVendor]。 */
+    fun withOperatorVendor(vendor: ModelVendor): SettingsForm {
+        if (vendor == operator.vendor) return this
+        val profiles = operatorVendors + (operator.vendor to operator.draft())
+        return copy(operator = ModelForm.of(profiles[vendor] ?: ModelVendor.preset(vendor)), operatorVendors = profiles)
+    }
+
+    /** 某厂商在表单里的可用模型：内置兜底 + 接口拉到的那份。 */
+    fun modelChoices(vendor: ModelVendor, fetched: List<String> = emptyList()): List<String> =
+        (vendor.models + fetched).map { it.trim() }.filter { it.isNotEmpty() }.distinct()
 
     /** Null while a field is invalid. */
     fun toSettings(): AppSettings? {
         val steps = maxSteps.trim().toIntOrNull()?.takeIf { it in AppSettings.MAX_STEPS_RANGE } ?: return null
         val embedding = memoryEmbedding.normalized()
         if (embedding.enabled && !embedding.configured) return null
+        val chatSettings = chat.toSettings() ?: return null
+        val operatorSettings = operator.toSettings() ?: return null
         return AppSettings(
-            chat = chat.toSettings() ?: return null,
-            operator = operator.toSettings() ?: return null,
+            chat = chatSettings,
+            operator = operatorSettings,
+            // 当前生效的那套也进档案：下次从别的厂商切回来时，Key 和模型都还在。
+            chatVendors = chatVendors + (chatSettings.vendor to chatSettings),
+            operatorVendors = operatorVendors + (operatorSettings.vendor to operatorSettings),
             asr = asr.toSettings(),
             tts = tts.toSettings(),
             realtime = realtime.toSettings(),
@@ -322,8 +537,10 @@ data class SettingsForm(
         fun of(s: AppSettings) = SettingsForm(
             chat = ModelForm.of(s.chat),
             operator = ModelForm.of(s.operator),
+            chatVendors = s.chatVendors,
+            operatorVendors = s.operatorVendors,
             asr = VoiceForm.of(s.asr),
-            tts = VoiceForm.of(s.tts),
+            tts = TtsForm.of(s.tts),
             realtime = VoiceForm.of(s.realtime),
             realtimeEnabled = s.realtimeEnabled,
             replyMode = s.replyMode,

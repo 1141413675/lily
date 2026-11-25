@@ -79,7 +79,8 @@ internal fun VoiceCloneScreen(
     val speaker = remember { Speaker(File(context.cacheDir, "voice").apply { mkdirs() }) }
     val recorder = remember { SampleRecorder(context) }
     val mic = rememberMicPermission()
-    val tts = settings.tts
+    // 声音复刻是硅基的能力，读写都用硅基那套配置，不受当前朗读引擎影响。
+    val tts = settings.tts.silicon
     val currentVoice = Voices.effective(settings.persona.voice, settings.persona.gender)
 
     var step by remember { mutableStateOf(CloneStep.SAMPLE) }

@@ -5,6 +5,7 @@ import dev.xiaoman.app.chat.EmojiStyle
 import dev.xiaoman.app.life.LifeSettings
 import dev.xiaoman.app.settings.AppSettings
 import dev.xiaoman.app.settings.RelationSettings
+import dev.xiaoman.app.settings.TtsProvider
 import dev.xiaoman.app.settings.VoiceSettings
 import dev.xiaoman.app.voice.VoiceRouting
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -34,12 +35,22 @@ data class AgentProfile(
         val roleVoice = persona.voice.trim()
         val realtimeVoice = roleVoice.takeIf { VoiceRouting.realtimeSupports(shared.realtime.baseUrl, it) }
             ?: VoiceSettings.DEFAULT_REALTIME_VOICE
+        // 角色音色只在属于当前朗读引擎时写进对应那套配置；否则交给 TtsSettings.request 按性别取默认，
+        // 避免把硅基 id 送进豆包、或把豆包 id 送进硅基。
+        val tts = when {
+            roleVoice.isEmpty() -> shared.tts.withSpeed(speechSpeed)
+            shared.tts.provider == TtsProvider.DOUBAO && Voices.isDoubao(roleVoice) ->
+                shared.tts.withVoice(roleVoice, speechSpeed)
+            shared.tts.provider == TtsProvider.SILICONFLOW && Voices.isSilicon(roleVoice) ->
+                shared.tts.withVoice(roleVoice, speechSpeed)
+            else -> shared.tts.withSpeed(speechSpeed)
+        }
         return shared.copy(
             persona = persona,
             life = life,
             emojiStyle = emojiStyle,
             relation = relation,
-            tts = shared.tts.copy(voice = roleVoice, speed = speechSpeed),
+            tts = tts,
             realtime = shared.realtime.copy(voice = realtimeVoice),
             personaVoiceNotice = false,
         )

@@ -24,9 +24,17 @@ object LlmClients {
             .build()
     }
 
-    /** Creates [OpenAiCompatibleClient]s that share [http]. */
+    /**
+     * Creates clients that share [http]. OpenAI-compatible endpoints use
+     * [OpenAiCompatibleClient]; Anthropic's native `/messages` endpoint uses [AnthropicClient].
+     */
     fun factory(http: OkHttpClient = sharedHttp, maxRetries: Int = 2): LlmClientFactory =
-        LlmClientFactory { OpenAiCompatibleClient(it, http, maxRetries) }
+        LlmClientFactory { config ->
+            when (config.protocol) {
+                dev.xiaoman.api.ApiProtocol.ANTHROPIC -> AnthropicClient(config, http, maxRetries)
+                dev.xiaoman.api.ApiProtocol.OPENAI -> OpenAiCompatibleClient(config, http, maxRetries)
+            }
+        }
 
     val default: LlmClientFactory by lazy { factory() }
 }
