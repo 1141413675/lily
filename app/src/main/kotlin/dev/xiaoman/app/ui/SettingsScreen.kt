@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -27,6 +29,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.automirrored.outlined.Chat
@@ -42,6 +45,7 @@ import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -846,7 +850,11 @@ internal fun TtsSection(form: SettingsForm.TtsForm, onChange: (SettingsForm.TtsF
 @Composable
 internal fun DoubaoTtsSection(form: SettingsForm.DoubaoForm, onChange: (SettingsForm.DoubaoForm) -> Unit) {
     var showToken by remember { mutableStateOf(false) }
+    var voicePicker by remember { mutableStateOf(false) }
+    var customVoice by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val known = dev.xiaoman.app.persona.Voices.of(form.voice)
+    val isCustom = customVoice || (form.voice.isNotBlank() && known == null)
     OutlinedTextField(
         value = form.baseUrl,
         onValueChange = { onChange(form.copy(baseUrl = it)) },
@@ -881,12 +889,103 @@ internal fun DoubaoTtsSection(form: SettingsForm.DoubaoForm, onChange: (Settings
         modifier = Modifier.fillMaxWidth(),
     )
     OutlinedTextField(
-        value = form.voice,
-        onValueChange = { onChange(form.copy(voice = it)) },
+        value = known?.let { "${it.label}  ·  ${it.id}" } ?: form.voice,
+        onValueChange = {},
+        readOnly = true,
         label = { Text(stringResource(R.string.models_tts_voice_type)) },
-        singleLine = true,
+        supportingText = { Text(stringResource(R.string.models_tts_voice_hint)) },
+        trailingIcon = {
+            IconButton(onClick = { voicePicker = true }) {
+                Icon(Icons.Filled.ArrowDropDown, contentDescription = stringResource(R.string.models_tts_voice_pick))
+            }
+        },
         modifier = Modifier.fillMaxWidth(),
     )
+    if (isCustom) {
+        OutlinedTextField(
+            value = form.voice,
+            onValueChange = { onChange(form.copy(voice = it)) },
+            label = { Text(stringResource(R.string.models_tts_voice_custom)) },
+            supportingText = { Text(stringResource(R.string.models_tts_voice_custom_hint)) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+    if (voicePicker) {
+        DoubaoVoicePicker(
+            current = form.voice,
+            onDismiss = { voicePicker = false },
+            onPick = { voice ->
+                onChange(form.copy(voice = voice))
+                customVoice = voice.isBlank()
+                voicePicker = false
+            },
+        )
+    }
+}
+
+/** 官方 2.0 音色选择器：按女声/男声分组，中文名 + voice_type 一行一个，末尾留自定义入口。 */
+@Composable
+private fun DoubaoVoicePicker(current: String, onDismiss: () -> Unit, onPick: (String) -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.models_tts_voice_pick)) },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        },
+        text = {
+            LazyColumn(modifier = Modifier.heightIn(max = 420.dp)) {
+                item(key = "__custom") {
+                    PickerRow(
+                        title = stringResource(R.string.models_tts_voice_custom),
+                        subtitle = stringResource(R.string.models_tts_voice_custom_hint),
+                        selected = current.isNotBlank() && dev.xiaoman.app.persona.Voices.of(current) == null,
+                        onClick = { onPick("") },
+                    )
+                    HorizontalDivider()
+                }
+                item(key = "__female") { PickerSection(stringResource(R.string.models_tts_voice_female)) }
+                items(dev.xiaoman.app.persona.Voices.DOUBAO_FEMALE, key = { it.id }) { option ->
+                    PickerRow(option.label, option.id, option.id == current) { onPick(option.id) }
+                }
+                item(key = "__male") { PickerSection(stringResource(R.string.models_tts_voice_male)) }
+                items(dev.xiaoman.app.persona.Voices.DOUBAO_MALE, key = { it.id }) { option ->
+                    PickerRow(option.label, option.id, option.id == current) { onPick(option.id) }
+                }
+            }
+        },
+    )
+}
+
+@Composable
+private fun PickerSection(title: String) {
+    Text(
+        title,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = Space.sm, bottom = Space.xs),
+    )
+}
+
+@Composable
+private fun PickerRow(title: String, subtitle: String, selected: Boolean, onClick: () -> Unit) {
+    TextButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (selected) {
+            Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        }
+    }
 }
 
 /** 单行 URL 显示不下时，提供一个复制完整地址的入口。 */

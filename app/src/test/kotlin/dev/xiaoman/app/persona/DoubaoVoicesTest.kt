@@ -1,0 +1,48 @@
+package dev.xiaoman.app.persona
+
+import dev.xiaoman.app.settings.TtsProvider
+import dev.xiaoman.app.settings.TtsSettings
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+
+/** 豆包 2.0 官方音色清单与默认选择。 */
+class DoubaoVoicesTest {
+    @Test
+    fun `every doubao voice is a 2_0 uranus id in the right gender group`() {
+        val all = Voices.DOUBAO_FEMALE + Voices.DOUBAO_MALE
+        assertTrue(all.size >= 40, "官方 2.0 中文音色明显不止 ${all.size} 个，清单可能被截断了")
+        assertTrue(Voices.DOUBAO_FEMALE.all { it.gender == Gender.FEMALE })
+        assertTrue(Voices.DOUBAO_MALE.all { it.gender == Gender.MALE })
+        for (voice in all) {
+            assertTrue(voice.id.endsWith("_uranus_bigtts"), "${voice.id} 不是 2.0 音色")
+            assertTrue(voice.id.contains("_female_") || voice.id.contains("_male_"), "${voice.id} 缺性别前缀")
+            assertTrue(voice.label.isNotBlank(), "${voice.id} 缺中文名")
+            assertEquals(voice, Voices.of(voice.id))
+        }
+        assertEquals(all.size, all.map { it.id }.distinct().size, "音色 id 有重复")
+    }
+
+    @Test
+    fun `default speaker is an official female voice`() {
+        val defaults = TtsSettings()
+        assertEquals(Voices.DOUBAO_DEFAULT_FEMALE, defaults.doubao.voice)
+        assertEquals(Voices.DOUBAO_DEFAULT_FEMALE, Voices.DOUBAO_FEMALE.first { it.id == "zh_female_vv_uranus_bigtts" }.id)
+
+        val doubao = TtsSettings(provider = TtsProvider.DOUBAO)
+        assertEquals(Voices.DOUBAO_DEFAULT_FEMALE, doubao.request("", Gender.FEMALE).voice)
+        assertEquals(Voices.DOUBAO_DEFAULT_FEMALE, doubao.request("", Gender.UNSPECIFIED).voice)
+        // 两个默认档都在各自的官方列表里。
+        assertTrue(Voices.DOUBAO_FEMALE.any { it.id == Voices.DOUBAO_DEFAULT_FEMALE })
+        assertTrue(Voices.DOUBAO_MALE.any { it.id == Voices.DOUBAO_DEFAULT_MALE })
+    }
+
+    @Test
+    fun `gender groups line up with the helper`() {
+        assertEquals(Voices.DOUBAO_FEMALE, Voices.doubaoFor(Gender.FEMALE))
+        assertEquals(Voices.DOUBAO_MALE, Voices.doubaoFor(Gender.MALE))
+        assertTrue(Voices.isDoubao(Voices.DOUBAO_FEMALE.first().id))
+        // 硅基音色不能被当成豆包音色送进 2.0。
+        assertTrue(!Voices.isDoubao(Voices.DEFAULT_FEMALE))
+    }
+}

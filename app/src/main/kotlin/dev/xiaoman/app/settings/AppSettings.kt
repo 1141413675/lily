@@ -144,8 +144,10 @@ data class TtsSettings(
     val silicon: VoiceSettings = VoiceSettings(model = VoiceSettings.DEFAULT_TTS_MODEL),
     val doubao: VoiceSettings = VoiceSettings(
         baseUrl = VoiceSettings.DOUBAO_BASE_URL,
-        resourceId = VoiceSettings.DOUBAO_RESOURCE_ID,
+        apiKey = "",
+        voice = dev.xiaoman.app.persona.Voices.DOUBAO_DEFAULT_FEMALE,
         provider = TtsProvider.DOUBAO,
+        resourceId = VoiceSettings.DOUBAO_RESOURCE_ID,
     ),
 ) {
     /** 当前供应商的原始配置，设置页编辑的就是它。 */
@@ -460,7 +462,7 @@ data class SettingsForm(
         val baseUrl: String = VoiceSettings.DOUBAO_BASE_URL,
         val token: String = "",
         val resourceId: String = VoiceSettings.DOUBAO_RESOURCE_ID,
-        val voice: String = "",
+        val voice: String = dev.xiaoman.app.persona.Voices.DOUBAO_DEFAULT_FEMALE,
     ) {
         fun toSettings(speed: Float) = VoiceSettings(
             baseUrl = baseUrl.trim(),
