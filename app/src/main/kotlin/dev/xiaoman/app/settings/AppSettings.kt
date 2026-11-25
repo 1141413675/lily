@@ -110,7 +110,7 @@ data class VoiceSettings(
         get() = when (provider) {
             TtsProvider.SILICONFLOW -> baseUrl.isNotBlank() && model.isNotBlank() && apiKey.isNotBlank()
             TtsProvider.DOUBAO -> baseUrl.isNotBlank() && apiKey.isNotBlank() &&
-                resourceId.isNotBlank() && voice.isNotBlank()
+                resourceId.isNotBlank()
         }
 
     override fun toString() =
@@ -140,8 +140,8 @@ data class VoiceSettings(
 }
 
 /**
- * 朗读设置：硅基与豆包 各留一份，[provider] 决定现在用哪套。切回去时音色、Key 都还在。
- * 语速对两套共用（设置页只有一个滑杆），因此 [withSpeed] 会同时写两边。
+ * 朗读账号级设置：引擎、Key、Resource ID、地址与语速。音色不在这里——
+ * 每个 Agent 在各自的人设页选音色，运行时按那个音色发音；没选过就按性别取引擎默认。
  */
 data class TtsSettings(
     val provider: TtsProvider = TtsProvider.SILICONFLOW,
@@ -149,7 +149,6 @@ data class TtsSettings(
     val doubao: VoiceSettings = VoiceSettings(
         baseUrl = VoiceSettings.DOUBAO_BASE_URL,
         apiKey = "",
-        voice = dev.xiaoman.app.persona.Voices.DOUBAO_DEFAULT_FEMALE,
         provider = TtsProvider.DOUBAO,
         resourceId = VoiceSettings.DOUBAO_RESOURCE_ID,
     ),
@@ -168,40 +167,22 @@ data class TtsSettings(
     fun withSpeed(value: Float): TtsSettings =
         copy(silicon = silicon.copy(speed = value), doubao = doubao.copy(speed = value))
 
-    /** 多智能体按角色音色改配置时用：只改当前引擎那份，另一套原样留着。 */
-    fun withVoice(voice: String, speedValue: Float = speed): TtsSettings = when (provider) {
-        TtsProvider.SILICONFLOW -> copy(silicon = silicon.copy(voice = voice, speed = speedValue))
-        TtsProvider.DOUBAO -> copy(doubao = doubao.copy(voice = voice, speed = speedValue))
-    }
-
     /**
-     * 发请求用的配置：人格里选的音色属于当前供应商就用它，否则退回该供应商自己的音色，
-     * 再不行按性别取默认。切换引擎后旧音色 id 不会把新引擎打成 400。
+     * 发请求用的配置：只用角色自己的音色；角色没设过、或音色不属于当前引擎时，
+     * 按性别取该引擎默认，不回落任何全局音色。
      */
     fun request(personaVoice: String, gender: dev.xiaoman.app.persona.Gender): VoiceSettings {
         val picked = personaVoice.trim()
         return when (provider) {
             TtsProvider.SILICONFLOW -> {
-                val voice = when {
-                    picked.isEmpty() -> silicon.voice
-                    dev.xiaoman.app.persona.Voices.isSilicon(picked) -> picked
-                    else -> silicon.voice
-                }
-                silicon.copy(
-                    voice = voice.ifBlank { dev.xiaoman.app.persona.Voices.defaultVoice(gender) },
-                    provider = TtsProvider.SILICONFLOW,
-                )
+                val voice = picked.takeIf { dev.xiaoman.app.persona.Voices.isSilicon(it) }
+                    ?: dev.xiaoman.app.persona.Voices.defaultVoice(gender)
+                silicon.copy(voice = voice, provider = TtsProvider.SILICONFLOW)
             }
             TtsProvider.DOUBAO -> {
-                val voice = when {
-                    picked.isEmpty() -> doubao.voice
-                    dev.xiaoman.app.persona.Voices.isDoubao(picked) -> picked
-                    else -> doubao.voice
-                }
-                doubao.copy(
-                    voice = voice.ifBlank { dev.xiaoman.app.persona.Voices.doubaoDefault(gender) },
-                    provider = TtsProvider.DOUBAO,
-                )
+                val voice = picked.takeIf { dev.xiaoman.app.persona.Voices.isDoubao(it) }
+                    ?: dev.xiaoman.app.persona.Voices.doubaoDefault(gender)
+                doubao.copy(voice = voice, provider = TtsProvider.DOUBAO)
             }
         }
     }
@@ -494,7 +475,8 @@ data class SettingsForm(
     ) {
         fun toSettings() = TtsSettings(
             provider = provider,
-            silicon = silicon.toSettings().copy(model = silicon.model.trim(), speed = speed),
+            // 设置页不再保存全局音色；旧版本遗留的值在这里清掉，音色只看角色档案。
+            silicon = silicon.toSettings().copy(model = silicon.model.trim(), speed = speed, voice = ""),
             doubao = doubao.toSettings(speed),
         )
 
@@ -510,28 +492,27 @@ data class SettingsForm(
         }
     }
 
-    /** 豆包 2.0 的必填项：API Key、Resource ID、speaker（音色 id）。 */
+    /** 豆包 2.0 的账号级必填项：API Key、Resource ID；音色归每个 Agent 的人设。 */
     data class DoubaoForm(
         val baseUrl: String = VoiceSettings.DOUBAO_BASE_URL,
         val token: String = "",
         val resourceId: String = VoiceSettings.DOUBAO_RESOURCE_ID,
-        val voice: String = dev.xiaoman.app.persona.Voices.DOUBAO_DEFAULT_FEMALE,
     ) {
         fun toSettings(speed: Float) = VoiceSettings(
             baseUrl = baseUrl.trim(),
             model = "",
             apiKey = token.trim(),
-            voice = voice.trim(),
+            voice = "",
             speed = speed,
             provider = TtsProvider.DOUBAO,
             resourceId = resourceId.trim(),
         )
 
         override fun toString() =
-            "DoubaoForm(baseUrl=$baseUrl, token=${if (token.isEmpty()) "<unset>" else "***"}, resourceId=$resourceId, voice=$voice)"
+            "DoubaoForm(baseUrl=$baseUrl, token=${if (token.isEmpty()) "<unset>" else "***"}, resourceId=$resourceId)"
 
         companion object {
-            fun of(s: VoiceSettings) = DoubaoForm(s.baseUrl, s.apiKey, s.resourceId, s.voice)
+            fun of(s: VoiceSettings) = DoubaoForm(s.baseUrl, s.apiKey, s.resourceId)
         }
     }
 

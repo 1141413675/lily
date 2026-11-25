@@ -129,7 +129,7 @@
     <string name="models_embedding_key_invalid">请使用服务提供的 Key，去掉中间的空格或换行。</string>
     <string name="models_embedding_incomplete">填好有效的接口地址和模型名称后即可保存并启用。</string>
     <string name="models_subtitle">这里只放地址、模型名和 Key。性格与声音在「TA」里。</string>
-    <string name="models_voice_hint">朗读和通话听到的是合成语音，不是真人录音。音色在「TA」里选。</string>
+    <string name="models_voice_hint">朗读和通话听到的是合成语音，不是真人录音。音色属于每个 Agent，请在对应角色的「人设」页里选。</string>
     <string name="models_vendor_key_hint">先选厂商，再只填它的 API Key；地址与常用模型已经填好。</string>
     <string name="models_key_hint">需要填的是：%1$s。其他厂商已经填过的 Key 不会被清掉。</string>
     <string name="models_pick_vendor">选择厂商</string>
@@ -143,7 +143,7 @@
     <string name="models_tts_provider_hint">朗读引擎两套配置分开存，切换只换引擎，另一套的 Key、音色都还在。</string>
     <string name="models_tts_siliconflow">硅基流动</string>
     <string name="models_tts_doubao">豆包 2.0</string>
-    <string name="models_tts_doubao_hint">豆包语音合成 2.0 走 WebSocket 双向流，填 API Key、Resource ID（默认 seed-tts-2.0），Speaker 从官方列表里选（默认 Vivi 2.0）；方舟的 ark- Key 不能用于这里。豆包出错时会自动退回硅基朗读。</string>
+    <string name="models_tts_doubao_hint">豆包语音合成 2.0 走 WebSocket 双向流，填 API Key、Resource ID（默认 seed-tts-2.0）；方舟的 ark- Key 不能用于这里。音色不在这里配，去每个 Agent 的人设页选。豆包出错时会自动退回硅基朗读。</string>
     <string name="models_tts_access_token">API Key</string>
     <string name="models_tts_resource_id">Resource ID</string>
     <string name="models_tts_voice_type">Speaker（音色）</string>

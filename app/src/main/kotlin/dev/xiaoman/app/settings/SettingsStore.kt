@@ -25,25 +25,10 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
     @Synchronized
     fun save(settings: AppSettings): Boolean {
         val previous = current
-        // 朗读页里给当前引擎填的音色就是统一音色，保存时写回人格，TA 页与通话同步；
-        // 没填则沿用人格里已经选好的那个。
-        val picked = settings.tts.active.voice.trim()
-        val unified = picked.ifEmpty { settings.persona.voice.trim() }
-        // 音色统一：朗读一定用统一音色（两套引擎各自换算，见 TtsSettings.request）；
-        // 实时通道认不出克隆 uri / 供应商音色时保留它原来的音色，不静默写坏实时通话（见 VoiceRouting）。
+        // 音色归每个 Agent 的人设，不在设置页统一；这里原样保存，不再改写 persona.voice，
+        // 也不会因为改 Key / 切引擎覆盖任何角色已经选过的音色。
         val stored = settings.copy(
             memoryEmbedding = settings.memoryEmbedding.normalized(),
-            persona = settings.persona.copy(
-                voice = unified,
-                voiceChosen = settings.persona.voiceChosen || picked.isNotEmpty(),
-            ),
-            realtime = settings.realtime.copy(
-                voice = if (unified.isNotEmpty() && dev.xiaoman.app.voice.VoiceRouting.realtimeSupports(settings.realtime.baseUrl, unified)) {
-                    unified
-                } else {
-                    settings.realtime.voice
-                },
-            ),
             // 当前生效的那套始终进档案，其他厂商的配置一条都不删。
             chatVendors = settings.chatVendors + (settings.chat.vendor to settings.chat),
             operatorVendors = settings.operatorVendors + (settings.operator.vendor to settings.operator),

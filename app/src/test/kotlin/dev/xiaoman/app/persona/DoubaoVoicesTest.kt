@@ -24,17 +24,41 @@ class DoubaoVoicesTest {
     }
 
     @Test
-    fun `default speaker is an official female voice`() {
+    fun `default speaker comes from the agent gender, not a global value`() {
         val defaults = TtsSettings()
-        assertEquals(Voices.DOUBAO_DEFAULT_FEMALE, defaults.doubao.voice)
-        assertEquals(Voices.DOUBAO_DEFAULT_FEMALE, Voices.DOUBAO_FEMALE.first { it.id == "zh_female_vv_uranus_bigtts" }.id)
+        assertEquals("", defaults.doubao.voice, "设置里不再保存全局音色")
+        assertEquals("", defaults.silicon.voice, "设置里不再保存全局音色")
 
         val doubao = TtsSettings(provider = TtsProvider.DOUBAO)
         assertEquals(Voices.DOUBAO_DEFAULT_FEMALE, doubao.request("", Gender.FEMALE).voice)
         assertEquals(Voices.DOUBAO_DEFAULT_FEMALE, doubao.request("", Gender.UNSPECIFIED).voice)
+        assertEquals(Voices.DOUBAO_DEFAULT_MALE, doubao.request("", Gender.MALE).voice)
         // 两个默认档都在各自的官方列表里。
         assertTrue(Voices.DOUBAO_FEMALE.any { it.id == Voices.DOUBAO_DEFAULT_FEMALE })
         assertTrue(Voices.DOUBAO_MALE.any { it.id == Voices.DOUBAO_DEFAULT_MALE })
+    }
+
+    @Test
+    fun `global voice value is ignored even if an old build stored one`() {
+        val doubao = TtsSettings(
+            provider = TtsProvider.DOUBAO,
+            doubao = dev.xiaoman.app.settings.VoiceSettings(
+                baseUrl = dev.xiaoman.app.settings.VoiceSettings.DOUBAO_BASE_URL,
+                voice = "zh_female_cancan_uranus_bigtts",
+                provider = TtsProvider.DOUBAO,
+                resourceId = dev.xiaoman.app.settings.VoiceSettings.DOUBAO_RESOURCE_ID,
+            ),
+        )
+        assertEquals(Voices.DOUBAO_DEFAULT_MALE, doubao.request("", Gender.MALE).voice)
+
+        val silicon = TtsSettings(
+            provider = TtsProvider.SILICONFLOW,
+            silicon = dev.xiaoman.app.settings.VoiceSettings(
+                model = dev.xiaoman.app.settings.VoiceSettings.DEFAULT_TTS_MODEL,
+                voice = "zh_female_cancan_uranus_bigtts",
+            ),
+        )
+        assertEquals(Voices.defaultVoice(Gender.FEMALE), silicon.request("", Gender.FEMALE).voice)
     }
 
     @Test

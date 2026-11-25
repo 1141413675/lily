@@ -207,13 +207,14 @@ fun PersonaScreen(
 
         PersonaCard(stringResource(R.string.persona_voice)) {
             val clones by graph.clones.voices.collectAsStateWithLifecycle()
-            // 实际音色：显式选择优先；留空时按性别取默认（硅基 claire/alex，豆包 Vivi/云舟）。
+            // 实际音色只看这个角色自己的选择；不属于当前引擎就按性别取该引擎默认，不借全局值。
             val provider = settings.tts.provider
-            val current = when {
-                provider == dev.xiaoman.app.settings.TtsProvider.DOUBAO && Voices.isDoubao(persona.voice.trim()) ->
-                    persona.voice.trim()
-                provider == dev.xiaoman.app.settings.TtsProvider.DOUBAO -> Voices.doubaoDefault(persona.gender)
-                else -> Voices.effective(persona.voice, persona.gender)
+            val picked = persona.voice.trim()
+            val current = when (provider) {
+                dev.xiaoman.app.settings.TtsProvider.DOUBAO ->
+                    picked.takeIf { Voices.isDoubao(it) } ?: Voices.doubaoDefault(persona.gender)
+                dev.xiaoman.app.settings.TtsProvider.SILICONFLOW ->
+                    picked.takeIf { Voices.isSilicon(it) } ?: Voices.defaultVoice(persona.gender)
             }
             val currentLabel = Voices.of(current)?.let { "${it.label}（${it.desc}）" }
                 ?: clones.firstOrNull { it.uri == current }?.let { "克隆 · ${it.name}" }

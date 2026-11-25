@@ -632,7 +632,7 @@ private fun ReplyMode.description() = when (this) {
 }
 
 @Composable
-internal fun VoiceSection(voice: SettingsForm.VoiceForm, showVoice: Boolean, onChange: (SettingsForm.VoiceForm) -> Unit) {
+internal fun VoiceSection(voice: SettingsForm.VoiceForm, onChange: (SettingsForm.VoiceForm) -> Unit) {
     var showKey by remember { mutableStateOf(false) }
     val context = LocalContext.current
     OutlinedTextField(
@@ -668,15 +668,6 @@ internal fun VoiceSection(voice: SettingsForm.VoiceForm, showVoice: Boolean, onC
         },
         modifier = Modifier.fillMaxWidth(),
     )
-    if (showVoice) {
-        OutlinedTextField(
-            value = voice.voice,
-            onValueChange = { onChange(voice.copy(voice = it)) },
-            label = { Text(stringResource(R.string.settings_voice_name)) },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-    }
 }
 
 /** 语音识别引擎：硅基 / 豆包流式两套配置分开存，切换只改 provider，另一套原样保留。 */
@@ -698,7 +689,7 @@ internal fun AsrSection(form: SettingsForm.AsrForm, onChange: (SettingsForm.AsrF
         DoubaoAsrSection(form.doubao) { onChange(form.copy(doubao = it)) }
         SettingsNote(stringResource(R.string.models_asr_doubao_hint))
     } else {
-        VoiceSection(form.silicon, showVoice = false) { onChange(form.copy(silicon = it)) }
+        VoiceSection(form.silicon) { onChange(form.copy(silicon = it)) }
         SettingsNote(stringResource(R.string.models_key_siliconflow))
     }
     val missing = form.toSettings().missing
@@ -899,23 +890,19 @@ internal fun TtsSection(form: SettingsForm.TtsForm, onChange: (SettingsForm.TtsF
         DoubaoTtsSection(form.doubao) { onChange(form.copy(doubao = it)) }
         SettingsNote(stringResource(R.string.models_tts_doubao_hint))
     } else {
-        VoiceSection(form.silicon, showVoice = true) { onChange(form.copy(silicon = it)) }
+        VoiceSection(form.silicon) { onChange(form.copy(silicon = it)) }
         SettingsNote(stringResource(R.string.models_voice_hint))
     }
 }
 
 /**
- * 豆包语音合成 2.0 朗读：WebSocket 地址 + API Key + Resource ID + speaker（音色 id）。
- * 这四项与方舟 Ark 的文本模型 Key 是两套体系，不能互相顶替。
+ * 豆包语音合成 2.0 的账号级配置：地址 + API Key + Resource ID。
+ * 音色不在这里，去每个 Agent 的人设页单独选。
  */
 @Composable
 internal fun DoubaoTtsSection(form: SettingsForm.DoubaoForm, onChange: (SettingsForm.DoubaoForm) -> Unit) {
     var showToken by remember { mutableStateOf(false) }
-    var voicePicker by remember { mutableStateOf(false) }
-    var customVoice by remember { mutableStateOf(false) }
     val context = LocalContext.current
-    val known = dev.xiaoman.app.persona.Voices.of(form.voice)
-    val isCustom = customVoice || (form.voice.isNotBlank() && known == null)
     OutlinedTextField(
         value = form.baseUrl,
         onValueChange = { onChange(form.copy(baseUrl = it)) },
@@ -949,104 +936,6 @@ internal fun DoubaoTtsSection(form: SettingsForm.DoubaoForm, onChange: (Settings
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
     )
-    OutlinedTextField(
-        value = known?.let { "${it.label}  ·  ${it.id}" } ?: form.voice,
-        onValueChange = {},
-        readOnly = true,
-        label = { Text(stringResource(R.string.models_tts_voice_type)) },
-        supportingText = { Text(stringResource(R.string.models_tts_voice_hint)) },
-        trailingIcon = {
-            IconButton(onClick = { voicePicker = true }) {
-                Icon(Icons.Filled.ArrowDropDown, contentDescription = stringResource(R.string.models_tts_voice_pick))
-            }
-        },
-        modifier = Modifier.fillMaxWidth(),
-    )
-    if (isCustom) {
-        OutlinedTextField(
-            value = form.voice,
-            onValueChange = { onChange(form.copy(voice = it)) },
-            label = { Text(stringResource(R.string.models_tts_voice_custom)) },
-            supportingText = { Text(stringResource(R.string.models_tts_voice_custom_hint)) },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-    }
-    if (voicePicker) {
-        DoubaoVoicePicker(
-            current = form.voice,
-            onDismiss = { voicePicker = false },
-            onPick = { voice ->
-                onChange(form.copy(voice = voice))
-                customVoice = voice.isBlank()
-                voicePicker = false
-            },
-        )
-    }
-}
-
-/** 官方 2.0 音色选择器：按女声/男声分组，中文名 + voice_type 一行一个，末尾留自定义入口。 */
-@Composable
-private fun DoubaoVoicePicker(current: String, onDismiss: () -> Unit, onPick: (String) -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.models_tts_voice_pick)) },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
-        },
-        text = {
-            LazyColumn(modifier = Modifier.heightIn(max = 420.dp)) {
-                item(key = "__custom") {
-                    PickerRow(
-                        title = stringResource(R.string.models_tts_voice_custom),
-                        subtitle = stringResource(R.string.models_tts_voice_custom_hint),
-                        selected = current.isNotBlank() && dev.xiaoman.app.persona.Voices.of(current) == null,
-                        onClick = { onPick("") },
-                    )
-                    HorizontalDivider()
-                }
-                item(key = "__female") { PickerSection(stringResource(R.string.models_tts_voice_female)) }
-                items(dev.xiaoman.app.persona.Voices.DOUBAO_FEMALE, key = { it.id }) { option ->
-                    PickerRow(option.label, option.id, option.id == current) { onPick(option.id) }
-                }
-                item(key = "__male") { PickerSection(stringResource(R.string.models_tts_voice_male)) }
-                items(dev.xiaoman.app.persona.Voices.DOUBAO_MALE, key = { it.id }) { option ->
-                    PickerRow(option.label, option.id, option.id == current) { onPick(option.id) }
-                }
-            }
-        },
-    )
-}
-
-@Composable
-private fun PickerSection(title: String) {
-    Text(
-        title,
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(top = Space.sm, bottom = Space.xs),
-    )
-}
-
-@Composable
-private fun PickerRow(title: String, subtitle: String, selected: Boolean, onClick: () -> Unit) {
-    TextButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                title,
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                subtitle,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        if (selected) {
-            Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-        }
-    }
 }
 
 /** 单行 URL 显示不下时，提供一个复制完整地址的入口。 */

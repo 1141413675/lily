@@ -35,16 +35,9 @@ data class AgentProfile(
         val roleVoice = persona.voice.trim()
         val realtimeVoice = roleVoice.takeIf { VoiceRouting.realtimeSupports(shared.realtime.baseUrl, it) }
             ?: VoiceSettings.DEFAULT_REALTIME_VOICE
-        // 角色音色只在属于当前朗读引擎时写进对应那套配置；否则交给 TtsSettings.request 按性别取默认，
-        // 避免把硅基 id 送进豆包、或把豆包 id 送进硅基。
-        val tts = when {
-            roleVoice.isEmpty() -> shared.tts.withSpeed(speechSpeed)
-            shared.tts.provider == TtsProvider.DOUBAO && Voices.isDoubao(roleVoice) ->
-                shared.tts.withVoice(roleVoice, speechSpeed)
-            shared.tts.provider == TtsProvider.SILICONFLOW && Voices.isSilicon(roleVoice) ->
-                shared.tts.withVoice(roleVoice, speechSpeed)
-            else -> shared.tts.withSpeed(speechSpeed)
-        }
+        // 音色只属于这个角色（persona.voice），不再写进全局朗读配置；
+        // 全局只带语速，运行时 TtsSettings.request 会按角色音色/性别默认换算。
+        val tts = shared.tts.withSpeed(speechSpeed)
         return shared.copy(
             persona = persona,
             life = life,

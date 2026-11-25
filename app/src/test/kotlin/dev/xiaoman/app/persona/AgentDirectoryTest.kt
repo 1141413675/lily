@@ -57,7 +57,10 @@ class AgentDirectoryTest {
         assertEquals(life, effective.life)
         assertEquals(EmojiStyle.RICH, effective.emojiStyle)
         assertEquals(1.2f, effective.tts.speed)
-        assertEquals(cloneVoice, effective.tts.active.voice)
+        // 音色留在角色档案里，全局朗读配置不再被角色音色覆盖。
+        assertEquals(cloneVoice, effective.persona.voice)
+        assertEquals(defaults.tts.active.voice, effective.tts.active.voice)
+        assertEquals(cloneVoice, effective.ttsRequest.voice)
         assertEquals(defaults.realtime.voice, effective.realtime.voice)
         assertEquals(shared.chat, effective.chat)
         assertFalse(effective.personaVoiceNotice)
@@ -104,5 +107,40 @@ class AgentDirectoryTest {
         assertEquals(optedIn, assertNotNull(restored.find(oldId)).effectiveSettings(shared).relation)
         assertFalse(assertNotNull(restored.find(second.id)).effectiveSettings(shared).relation.proactive)
         assertEquals(3, shared.relation.maxPerDay)
+    }
+
+    @Test fun `two agents keep their own voices and fall back by gender after switching engines`() {
+        val directory = AgentDirectory(File(temporary.root, "agents.json"))
+        val firstVoice = Voices.DOUBAO_FEMALE[0].id
+        val secondVoice = Voices.DOUBAO_FEMALE[1].id
+        val first = assertNotNull(
+            directory.create(PersonaSettings(nickname = "甲", gender = Gender.FEMALE, voice = firstVoice, voiceChosen = true)),
+        )
+        val second = assertNotNull(
+            directory.create(PersonaSettings(nickname = "乙", gender = Gender.MALE, voice = secondVoice, voiceChosen = true)),
+        )
+
+        val doubao = AppSettings(tts = dev.xiaoman.app.settings.TtsSettings(
+            provider = dev.xiaoman.app.settings.TtsProvider.DOUBAO,
+            doubao = dev.xiaoman.app.settings.VoiceSettings(
+                baseUrl = dev.xiaoman.app.settings.VoiceSettings.DOUBAO_BASE_URL,
+                voice = "zh_male_wennuanahu_uranus_bigtts",
+                provider = dev.xiaoman.app.settings.TtsProvider.DOUBAO,
+                resourceId = dev.xiaoman.app.settings.VoiceSettings.DOUBAO_RESOURCE_ID,
+            ),
+        ))
+        assertEquals(firstVoice, first.effectiveSettings(doubao).ttsRequest.voice)
+        assertEquals(secondVoice, second.effectiveSettings(doubao).ttsRequest.voice)
+
+        // 全局里放一把别的音色，不影响已经选过的角色；没选过的按性别取默认。
+        val blank = assertNotNull(directory.create(PersonaSettings(nickname = "丙", gender = Gender.MALE)))
+        assertEquals(Voices.doubaoDefault(Gender.MALE), blank.effectiveSettings(doubao).ttsRequest.voice)
+
+        // 切到硅基：两个 Agent 的豆包音色都不通用，各自按性别回退，互不影响。
+        val silicon = AppSettings(tts = dev.xiaoman.app.settings.TtsSettings(
+            provider = dev.xiaoman.app.settings.TtsProvider.SILICONFLOW,
+        ))
+        assertEquals(Voices.defaultVoice(Gender.FEMALE), first.effectiveSettings(silicon).ttsRequest.voice)
+        assertEquals(Voices.defaultVoice(Gender.MALE), second.effectiveSettings(silicon).ttsRequest.voice)
     }
 }

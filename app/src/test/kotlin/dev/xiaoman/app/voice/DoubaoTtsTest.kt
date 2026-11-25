@@ -183,7 +183,7 @@ class DoubaoTtsTest {
         assertEquals("FunAudioLLM/CosyVoice2-0.5B:claire", back.request("zh_female_vv_uranus_bigtts", Gender.FEMALE).voice)
     }
 
-    @Test fun doubaoNeedsKeyResourceIdAndSpeaker() {
+    @Test fun doubaoNeedsKeyAndResourceButNotAGlobalVoice() {
         val tts = TtsSettings(
             provider = TtsProvider.DOUBAO,
             doubao = VoiceSettings(
@@ -193,11 +193,10 @@ class DoubaoTtsTest {
                 resourceId = VoiceSettings.DOUBAO_RESOURCE_ID,
             ),
         )
-        assertFalse(tts.configured)
-        val withVoice = tts.copy(doubao = tts.doubao.copy(voice = "zh_female_vv_uranus_bigtts"))
-        assertTrue(withVoice.configured)
-        assertFalse(withVoice.copy(doubao = withVoice.doubao.copy(resourceId = " ")).configured)
-        assertFalse(withVoice.copy(doubao = withVoice.doubao.copy(apiKey = "")).configured)
+        // 音色归角色，账号配置里没有 Speaker 也算完整。
+        assertTrue(tts.configured)
+        assertFalse(tts.copy(doubao = tts.doubao.copy(resourceId = " ")).configured)
+        assertFalse(tts.copy(doubao = tts.doubao.copy(apiKey = "")).configured)
     }
 
     @Test fun fallbackIsSiliconOnlyWhenItIsConfigured() {
