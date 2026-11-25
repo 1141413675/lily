@@ -141,6 +141,26 @@ class DoubaoTtsTest {
         assertTrue(frame.isError)
     }
 
+    @Test fun officialEventNumbersMatchTheProtocol() {
+        assertEquals(151, DoubaoTts.Event.SESSION_CANCELED)
+        assertEquals(152, DoubaoTts.Event.SESSION_FINISHED)
+        assertEquals(153, DoubaoTts.Event.SESSION_FAILED)
+    }
+
+    @Test fun sessionFinishedWithUsageIsNotAnError() {
+        // 官方 SessionFinished 事件号是 152，payload 带 usage；曾把 152 当失败，导致每通电话无声。
+        val frame = DoubaoTts.parseFrame(
+            serverFrame(
+                DoubaoTts.Msg.SERVER_FULL_RESPONSE,
+                DoubaoTts.Event.SESSION_FINISHED,
+                "s-1",
+                """{"usage":{"text_words":8}}""".toByteArray(),
+            ),
+        )
+        assertEquals(152, frame.event)
+        assertFalse(frame.isError)
+    }
+
     // ---- 配置与音色 ----
 
     @Test fun requestSwapsVoicesThatBelongToTheOtherProvider() {

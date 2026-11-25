@@ -35,8 +35,10 @@ internal object DoubaoTts {
         const val START_SESSION = 100
         const val FINISH_SESSION = 102
         const val SESSION_STARTED = 150
-        const val SESSION_FINISHED = 151
-        const val SESSION_FAILED = 152
+        /** 官方：151 SessionCanceled、152 SessionFinished、153 SessionFailed。 */
+        const val SESSION_CANCELED = 151
+        const val SESSION_FINISHED = 152
+        const val SESSION_FAILED = 153
         const val TASK_REQUEST = 200
         const val TTS_SENTENCE_START = 350
         const val TTS_SENTENCE_END = 351
@@ -108,7 +110,7 @@ internal object DoubaoTts {
                         "朗读失败（${frame.errorCode ?: frame.event}）：${frame.payload.toString(Charsets.UTF_8).message()}",
                     )
                     frame.isAudio && frame.event == Event.TTS_RESPONSE -> audio.write(frame.payload)
-                    frame.event == Event.SESSION_FINISHED -> break
+                    frame.event == Event.SESSION_FINISHED || frame.event == Event.SESSION_CANCELED -> break
                 }
             }
             if (audio.size() == 0) throw error("朗读结果为空：服务端没有返回音频")
