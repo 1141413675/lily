@@ -263,6 +263,51 @@ class SettingsTest {
         }
     }
 
+    @Test fun `asr provider and doubao key survive a round trip and stay encrypted`() {
+        val store = store()
+        val doubaoKey = "doubao-asr-key"
+        val siliconKey = "sk-asr-silicon"
+        val asr = AsrSettings(
+            provider = AsrProvider.DOUBAO,
+            silicon = VoiceSettings(
+                baseUrl = "https://api.siliconflow.cn/v1",
+                model = VoiceSettings.DEFAULT_ASR_MODEL,
+                apiKey = siliconKey,
+            ),
+            doubao = VoiceSettings(
+                baseUrl = VoiceSettings.DOUBAO_ASR_BASE_URL,
+                apiKey = doubaoKey,
+                provider = TtsProvider.DOUBAO,
+                resourceId = "volc.seedasr.sauc.concurrent",
+            ),
+        )
+        store.save(store.current.copy(asr = asr))
+
+        val restored = store.current.asr
+        assertEquals(AsrProvider.DOUBAO, restored.provider)
+        assertEquals(doubaoKey, restored.doubao.apiKey)
+        assertEquals("volc.seedasr.sauc.concurrent", restored.resourceId)
+        assertEquals(siliconKey, restored.silicon.apiKey)
+        // 地址固定，不随存盘值变化。
+        assertEquals(VoiceSettings.DOUBAO_ASR_BASE_URL, restored.doubao.baseUrl)
+        assertTrue(restored.configured)
+        val saved = store.current
+        assertTrue(doubaoKey in saved.secrets)
+        assertTrue(siliconKey in saved.secrets)
+
+        val plain = context.getSharedPreferences("plain-test", Context.MODE_PRIVATE).all.values.joinToString()
+        val secret = context.getSharedPreferences("secret-test", Context.MODE_PRIVATE).all.values.joinToString()
+        assertFalse(doubaoKey in plain)
+        assertFalse(siliconKey in plain)
+        assertTrue(doubaoKey in secret)
+        assertTrue(siliconKey in secret)
+
+        // 切回硅基只改 provider，豆包 Key 不会被清掉。
+        store.save(store.current.copy(asr = store.current.asr.copy(provider = AsrProvider.SILICONFLOW)))
+        assertEquals(AsrProvider.SILICONFLOW, store.current.asr.provider)
+        assertEquals(doubaoKey, store.current.asr.doubao.apiKey)
+    }
+
     @Test fun `primary role retains legacy birthdays and round trips new profile fields`() {
         val prefs = context.getSharedPreferences("plain-test", Context.MODE_PRIVATE)
         prefs.edit().putInt("persona.birthdayYear", 2000).putInt("persona.birthdayMonth", 2).commit()

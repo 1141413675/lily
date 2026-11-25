@@ -128,6 +128,10 @@ data class VoiceSettings(
         const val DOUBAO_BASE_URL = "wss://openspeech.bytedance.com/api/v3/tts/bidirection"
         const val DOUBAO_RESOURCE_ID = "seed-tts-2.0"
 
+        /** 豆包流式语音识别 2.0（大模型双向流式），地址固定，不用旧 v2 的 AppID/Cluster。 */
+        const val DOUBAO_ASR_BASE_URL = "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async"
+        const val DOUBAO_ASR_RESOURCE_ID = "volc.seedasr.sauc.duration"
+
         /** Alibaba DashScope: OpenAI-Realtime-compatible event protocol, reachable from mainland China. */
         const val DEFAULT_REALTIME_BASE_URL = "wss://dashscope.aliyuncs.com/api-ws/v1/realtime"
         const val DEFAULT_REALTIME_MODEL = "qwen-omni-turbo-realtime"
@@ -203,6 +207,54 @@ data class TtsSettings(
     }
 }
 
+/** 语音识别引擎。两套配置都留在本机，切换只改 provider，另一套的 Key/地址不会丢。 */
+enum class AsrProvider { SILICONFLOW, DOUBAO }
+
+/**
+ * 语音识别设置。硅基沿用 OpenAI 兼容的 `/audio/transcriptions`；
+ * 豆包走「流式语音识别 2.0」（`api/v3/sauc/bigmodel_async`），只需 API Key 与 Resource ID，
+ * 地址固定，不用旧 v2 的 AppID / Access Token / Cluster。[doubao] 里的音色、语速是
+ * [VoiceSettings] 的通用字段，识别不用它们。
+ */
+data class AsrSettings(
+    val provider: AsrProvider = AsrProvider.SILICONFLOW,
+    val silicon: VoiceSettings = VoiceSettings(model = VoiceSettings.DEFAULT_ASR_MODEL),
+    val doubao: VoiceSettings = VoiceSettings(
+        baseUrl = VoiceSettings.DOUBAO_ASR_BASE_URL,
+        provider = TtsProvider.DOUBAO,
+        resourceId = VoiceSettings.DOUBAO_ASR_RESOURCE_ID,
+    ),
+) {
+    /**
+     * 豆包只要 API Key；Resource ID 留空时按官方默认小时版处理。
+     * 不复用 [VoiceSettings.configured]：那套规则是朗读的（还要求音色）。
+     */
+    val configured: Boolean
+        get() = when (provider) {
+            AsrProvider.SILICONFLOW -> silicon.configured
+            AsrProvider.DOUBAO -> doubao.apiKey.isNotBlank()
+        }
+
+    /** 实际发请求用的 Resource ID。 */
+    val resourceId: String get() = doubao.resourceId.trim().ifBlank { VoiceSettings.DOUBAO_ASR_RESOURCE_ID }
+
+    /** 豆包失败时用于兜底的硅基配置；没填就是 null。 */
+    val siliconFallback: VoiceSettings? get() = silicon.takeIf { it.configured }
+
+    /** 还缺哪些必填项（可读文字）；空表示当前引擎已配好。 */
+    val missing: List<String>
+        get() = when (provider) {
+            AsrProvider.SILICONFLOW -> buildList {
+                if (silicon.baseUrl.isBlank()) add("地址")
+                if (silicon.model.isBlank()) add("模型")
+                if (silicon.apiKey.isBlank()) add("API Key")
+            }
+            AsrProvider.DOUBAO -> if (doubao.apiKey.isBlank()) listOf("API Key") else emptyList()
+        }
+
+    override fun toString() = "AsrSettings(provider=$provider, silicon=$silicon, doubao=$doubao)"
+}
+
 /**
  * How an assistant reply reaches the user: [AUTO] keeps the default (text, no reading), [TEXT] is
  * text only, [VOICE] posts a voice bubble without the text body, [CALL] opens the call screen and
@@ -272,7 +324,7 @@ data class AppSettings(
     val chatVendors: Map<ModelVendor, ModelSettings> = emptyMap(),
     /** 操作模型同理，按厂商各存一份。 */
     val operatorVendors: Map<ModelVendor, ModelSettings> = emptyMap(),
-    val asr: VoiceSettings = VoiceSettings(model = VoiceSettings.DEFAULT_ASR_MODEL),
+    val asr: AsrSettings = AsrSettings(),
     /** 朗读引擎：硅基 / 豆包 两套配置都保留，切换立即生效。 */
     val tts: TtsSettings = TtsSettings(),
     /** Real-time full-duplex call channel; empty key means it is off and the hands-free fallback is used. */
@@ -335,7 +387,8 @@ data class AppSettings(
             add(operator.apiKey)
             chatVendors.values.forEach { add(it.apiKey) }
             operatorVendors.values.forEach { add(it.apiKey) }
-            add(asr.apiKey)
+            add(asr.silicon.apiKey)
+            add(asr.doubao.apiKey)
             add(tts.silicon.apiKey)
             add(tts.doubao.apiKey)
             add(realtime.apiKey)
@@ -358,7 +411,7 @@ data class SettingsForm(
     /** 其他厂商已经填好的聊天配置；切厂商时原样保留，切回即用。 */
     val chatVendors: Map<ModelVendor, ModelSettings> = emptyMap(),
     val operatorVendors: Map<ModelVendor, ModelSettings> = emptyMap(),
-    val asr: VoiceForm = VoiceForm(model = VoiceSettings.DEFAULT_ASR_MODEL),
+    val asr: AsrForm = AsrForm(),
     val tts: TtsForm = TtsForm(),
     val realtime: VoiceForm = VoiceForm(
         baseUrl = VoiceSettings.DEFAULT_REALTIME_BASE_URL,
@@ -482,6 +535,51 @@ data class SettingsForm(
         }
     }
 
+    /** 语音识别两套引擎的表单：只编辑当前选中的那套，另一套原样留着。 */
+    data class AsrForm(
+        val provider: AsrProvider = AsrProvider.SILICONFLOW,
+        val silicon: VoiceForm = VoiceForm(model = VoiceSettings.DEFAULT_ASR_MODEL),
+        val doubao: DoubaoAsrForm = DoubaoAsrForm(),
+    ) {
+        fun toSettings() = AsrSettings(
+            provider = provider,
+            silicon = silicon.toSettings(),
+            doubao = doubao.toSettings(),
+        )
+
+        override fun toString() = "AsrForm(provider=$provider, silicon=$silicon, doubao=$doubao)"
+
+        companion object {
+            fun of(a: AsrSettings) = AsrForm(
+                provider = a.provider,
+                silicon = VoiceForm.of(a.silicon),
+                doubao = DoubaoAsrForm.of(a.doubao),
+            )
+        }
+    }
+
+    /** 豆包流式语音识别 2.0：地址固定，只填 API Key 与 Resource ID。 */
+    data class DoubaoAsrForm(
+        val token: String = "",
+        val resourceId: String = VoiceSettings.DOUBAO_ASR_RESOURCE_ID,
+    ) {
+        fun toSettings() = VoiceSettings(
+            baseUrl = VoiceSettings.DOUBAO_ASR_BASE_URL,
+            model = "",
+            apiKey = token.trim(),
+            voice = "",
+            provider = TtsProvider.DOUBAO,
+            resourceId = resourceId.trim().ifBlank { VoiceSettings.DOUBAO_ASR_RESOURCE_ID },
+        )
+
+        override fun toString() =
+            "DoubaoAsrForm(token=${if (token.isEmpty()) "<unset>" else "***"}, resourceId=$resourceId)"
+
+        companion object {
+            fun of(s: VoiceSettings) = DoubaoAsrForm(s.apiKey, s.resourceId)
+        }
+    }
+
     val maxStepsValid: Boolean get() = maxSteps.trim().toIntOrNull()?.let { it in AppSettings.MAX_STEPS_RANGE } == true
 
     /** 切聊天厂商：先把当前输入（含还没保存的 Key）存进档案，再换成目标厂商的配置。 */
@@ -541,7 +639,7 @@ data class SettingsForm(
             operator = ModelForm.of(s.operator),
             chatVendors = s.chatVendors,
             operatorVendors = s.operatorVendors,
-            asr = VoiceForm.of(s.asr),
+            asr = AsrForm.of(s.asr),
             tts = TtsForm.of(s.tts),
             realtime = VoiceForm.of(s.realtime),
             realtimeEnabled = s.realtimeEnabled,

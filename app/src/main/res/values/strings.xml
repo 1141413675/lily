@@ -154,6 +154,13 @@
     <string name="models_tts_voice_female">女声</string>
     <string name="models_tts_voice_male">男声</string>
     <string name="models_key_siliconflow">用硅基流动的 Key（sk- 开头），地址默认 https://api.siliconflow.cn/v1</string>
+    <string name="models_asr_provider_hint">语音识别两套配置分开存，切换只换引擎，另一套的 Key 与地址都还在。</string>
+    <string name="models_asr_siliconflow">硅基流动</string>
+    <string name="models_asr_doubao">豆包流式</string>
+    <string name="models_asr_doubao_hint">豆包流式语音识别 2.0 走 WebSocket 双向流，地址固定为 wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async；只填新版控制台的 API Key 与 Resource ID（默认 volc.seedasr.sauc.duration，并发版可改成 volc.seedasr.sauc.concurrent）。旧 v2 的 AppID / Access Token / Cluster 不用。豆包失败时会自动退回硅基识别同一段录音。</string>
+    <string name="models_asr_incomplete">还差：%1$s。填好就能用来识别。</string>
+    <string name="models_asr_resource_id_hint">留空用默认 volc.seedasr.sauc.duration（2.0 小时版）。</string>
+    <string name="models_asr_doubao_fixed_url">识别地址固定，不用手填。</string>
     <string name="models_key_dashscope">用阿里云百炼的 Key（sk- 开头），地址默认 wss://dashscope.aliyuncs.com/api-ws/v1/realtime</string>
     <string name="models_realtime_switch">实时全双工（默认关闭）。关闭时通话走「录音 → 识别 → 回复 → 朗读」的轮次链路；打开才会尝试百炼实时通道。</string>
     <string name="models_unsaved_title">还有改动没保存</string>

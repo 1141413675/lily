@@ -10,6 +10,8 @@ import dev.xiaoman.app.R
 import dev.xiaoman.app.chat.Emoji
 import dev.xiaoman.app.relationship.RelationshipStore
 import dev.xiaoman.app.settings.AppSettings
+import dev.xiaoman.app.settings.AsrProvider
+import dev.xiaoman.app.settings.AsrSettings
 import dev.xiaoman.app.session.AgentSession
 import dev.xiaoman.app.session.CallOutcome
 import dev.xiaoman.app.session.ChatItem
@@ -110,6 +112,11 @@ class CallController(
     private var realtime: RealtimeClient? = null
     private var mode = CallState.Mode.HANDSFREE
 
+    /** 这一句话的豆包流式识别连接；麦没开或不是豆包时为空。 */
+    private var asrStream: DoubaoAsr.Session? = null
+    /** 连接没建起来时的可读原因，收尾时随录音一起交给转写环节做兜底说明。 */
+    private var asrStreamError: String? = null
+
     private var callStartedAt = 0L
     private var connectedAt = 0L
     private var missStreak = 0
@@ -126,6 +133,13 @@ class CallController(
     private var previousMode = AudioManager.MODE_NORMAL
     private var previousSpeaker = false
     private var callAudioActive = false
+
+    /** 一句话的录音文件，以及录音期间跑着的豆包识别连接（硅基时为空）。 */
+    private class Utterance(
+        val file: File,
+        val stream: DoubaoAsr.Session?,
+        val streamError: String?,
+    )
 
     /** 最近几句播报文本；免提与实时通道都写到这里，只用于自回声比对。 */
     private val spoken = SpokenBaseline()
@@ -238,7 +252,7 @@ class CallController(
         _state.value = _state.value.copy(muted = value)
         realtime?.setMuted(value)
         if (value) {
-            recorder.stop()?.delete()
+            cancelCapture()
             if (_state.value.phase != CallState.Phase.SPEAKING) _level.value = 0f
         }
     }
@@ -392,7 +406,7 @@ class CallController(
         sounds.stopRingback()
         realtime?.stop()
         realtime = null
-        recorder.stop()?.delete()
+        cancelCapture()
         scope.launch(Dispatchers.Main) { speaker.stop() }
         exitCallAudio()
     }
@@ -530,7 +544,7 @@ class CallController(
                     handsfreeLoop()
                 }
             } finally {
-                recorder.stop()?.delete()
+                cancelCapture()
             }
         }
     }
@@ -538,13 +552,14 @@ class CallController(
     private suspend fun handsfreeLoop() {
         while (_state.value.active) {
             val turnStart = clock()
-            val recording = listen() ?: break
+            val utterance = listen() ?: break
             val listenedAt = clock()
+            val recording = utterance.file
             // 识别会删掉原始录音，先把这一句复制进通话明细目录，详情页才能回放。
             val userAudio = withContext(Dispatchers.IO) {
                 logs.saveAudio(callStartedAt, turnSerial++, recording)
             }
-            val text = transcribe(recording) ?: continue
+            val text = transcribe(utterance) ?: continue
             if (spoken.isEcho(text)) {
                 // 外放残响被识别成用户的话：整轮丢弃，不上屏、不进对话。
                 userAudio?.let { runCatching { File(it).delete() } }
@@ -609,11 +624,12 @@ class CallController(
     /**
      * Records until the endpoint: waits for speech, then for [END_SILENCE_MS] of silence, and
      * restarts the file every [QUIET_RESTART_MS] while nobody speaks so nothing grows unbounded.
+     * 豆包引擎时，每一段录音都同时挂一条流式识别连接，边录边发。
      */
-    private suspend fun listen(): File? {
+    private suspend fun listen(): Utterance? {
         if (!_state.value.active) return null
         _state.value = _state.value.copy(phase = CallState.Phase.LISTENING)
-        if (!recorder.start()) {
+        if (!startCapture()) {
             abort("打不开麦克风，检查录音权限。")
             return null
         }
@@ -628,7 +644,7 @@ class CallController(
                 // 静音：摘掉麦克风并重置这一句的判定；取消静音后从新的一句重新开始。
                 if (muted) {
                     if (recording) {
-                        recorder.stop()?.delete()
+                        cancelCapture()
                         recording = false
                     }
                     heard = false
@@ -638,7 +654,7 @@ class CallController(
                     continue
                 }
                 if (!recording) {
-                    if (!recorder.start()) {
+                    if (!startCapture()) {
                         abort("麦克风中断了。")
                         return null
                     }
@@ -653,8 +669,8 @@ class CallController(
                         heard = true
                         quiet = 0
                     } else if (elapsed >= QUIET_RESTART_MS) {
-                        recorder.stop()?.delete()
-                        if (!recorder.start()) {
+                        cancelCapture()
+                        if (!startCapture()) {
                             abort("麦克风中断了。")
                             return null
                         }
@@ -670,36 +686,105 @@ class CallController(
             }
         } finally {
             // Cancellation (end call / leaving the screen) also stops the microphone.
-            recorder.stop()?.delete()
+            // 成功收尾时 finishUtterance 已经把文件和连接取走，这里是取消/静音/异常时的兜底。
+            cancelCapture()
             _level.value = 0f
         }
     }
 
-    private fun finishUtterance(): File? {
-        val file = recorder.stop() ?: return null
-        return file.takeIf { it.length() > 0 } ?: run {
-            file.delete()
-            null
+    /** 开麦；豆包时同时连一条流式识别，`onChunk` 把 PCM 直接推出去。 */
+    private fun startCapture(): Boolean {
+        cancelCapture()
+        val asr = settings().asr
+        val session = if (asr.provider == AsrProvider.DOUBAO) openAsrStream(asr) else null
+        val sink: ((ByteArray, Int) -> Unit)? =
+            session?.let { s -> { bytes: ByteArray, count: Int -> s.sendPcm(bytes, 0, count) } }
+        if (!recorder.start(onChunk = sink)) {
+            session?.cancel()
+            return false
         }
+        asrStream = session
+        return true
     }
 
-    private suspend fun transcribe(recording: File): String? {
+    private fun openAsrStream(asr: AsrSettings): DoubaoAsr.Session? = try {
+        DoubaoAsr.open(asr.doubao.copy(resourceId = asr.resourceId))
+    } catch (e: Exception) {
+        // 连不上也继续录，收尾时用硅基兜底，并把原因带上。
+        asrStreamError = e.message ?: "豆包语音识别连接失败"
+        Log.w(TAG, "call asr: doubao open failed: ${e.message}")
+        null
+    }
+
+    /** 停止采集，并取消这一句还没收尾的识别连接；临时文件一并删掉。 */
+    private fun cancelCapture() {
+        val session = asrStream
+        asrStream = null
+        asrStreamError = null
+        session?.cancel()
+        recorder.stop()?.delete()
+    }
+
+    private fun finishUtterance(): Utterance? {
+        val stream = asrStream
+        val streamError = asrStreamError
+        asrStream = null
+        asrStreamError = null
+        val file = recorder.stop()
+        if (file == null || file.length() <= 0) {
+            file?.delete()
+            stream?.cancel()
+            return null
+        }
+        return Utterance(file, stream, streamError)
+    }
+
+    private suspend fun transcribe(utterance: Utterance): String? {
         _state.value = _state.value.copy(phase = CallState.Phase.TRANSCRIBING)
-        return try {
-            // SenseVoice 会把情绪表情（如 😔）写进识别文本；通话不显示表情，先剥掉再走对话与字幕。
-            // 剥完为空说明这句只有表情/空白，按「没听清」处理，不写入空气泡。
-            val text = Emoji.strip(api.transcribe(settings().asr, recording))
-            if (text.isBlank()) {
-                Log.i(TAG, "call: transcription empty after emoji strip")
-                null
-            } else {
-                text
+        val recording = utterance.file
+        try {
+            val asr = settings().asr
+            var failure: String? = null
+            val stream = utterance.stream
+            if (stream != null) {
+                // 流式识别已经在录音过程中跑完了：这里只发负包取最终文本。
+                val raw = try {
+                    withContext(Dispatchers.IO) { stream.finish() }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    failure = e.message ?: "语音识别失败"
+                    null
+                }
+                // 豆包只取文本，不显示情绪/语速；表情同样剥掉，避免空气泡。
+                val line = raw?.let { Emoji.strip(it) }
+                if (!line.isNullOrBlank()) return line
+                if (failure == null) failure = "语音识别失败：豆包没有识别出内容。"
+            } else if (asr.provider == AsrProvider.DOUBAO) {
+                failure = utterance.streamError ?: "语音识别失败：豆包连接没有建立。"
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            say(e.message ?: "识别失败")
-            null
+
+            // 硅基：当前引擎时就是主路径，豆包失败时是兜底。录音一直是 WAV，两边都能用。
+            val silicon = asr.silicon
+            if (!silicon.configured) {
+                say(failure?.let { "$it 硅基兜底也没有配置，去设置里补上语音识别。" } ?: "还没有配置语音识别。")
+                return null
+            }
+            val text = try {
+                Emoji.strip(api.transcribe(silicon, recording))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val reason = e.message ?: "识别失败"
+                say(failure?.let { "$it 硅基兜底也失败：$reason" } ?: reason)
+                return null
+            }
+            if (text.isBlank()) {
+                if (failure != null) say("$failure 硅基也没有识别出内容。")
+                else Log.i(TAG, "call: transcription empty after emoji strip")
+                return null
+            }
+            return text
         } finally {
             recording.delete()
         }

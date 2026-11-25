@@ -53,7 +53,8 @@ class VoiceMessages(
     fun startRecording() {
         if (_send.value == VoiceSend.Recording) return
         if (!settings().asr.configured) {
-            _send.value = VoiceSend.Failed("还没有配置语音识别，去设置里填 Base URL、模型和 API Key。")
+            val missing = settings().asr.missing.joinToString("、")
+            _send.value = VoiceSend.Failed("还没有配置语音识别，去设置里补上：$missing。")
             return
         }
         player.stop()
@@ -76,6 +77,7 @@ class VoiceMessages(
         scope.launch {
             val duration = AudioStore.durationMs(recording)
             val text = try {
+                // 按设置里的引擎识别；豆包失败会自动回落到已配置的硅基。
                 api.transcribe(settings().asr, recording)
             } catch (e: CancellationException) {
                 recording.delete()

@@ -45,9 +45,12 @@ class AecRecorder(context: Context) {
         }
     }
 
-    /** 开一条新的录音；打不开麦克风时返回 false。 */
+    /**
+     * 开一条新的录音；打不开麦克风时返回 false。
+     * [onChunk] 每收到一小段 16k 单声道 PCM16（小端）回调一次，供流式识别边录边发。
+     */
     @Synchronized
-    fun start(): Boolean {
+    fun start(onChunk: ((ByteArray, Int) -> Unit)? = null): Boolean {
         stop()
         val min = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL, ENCODING)
         if (min <= 0) return false
@@ -93,7 +96,7 @@ class AecRecorder(context: Context) {
         file = target
         peak = 0
         running = true
-        worker = thread(name = "call-recorder", isDaemon = true) { pump(r, target) }
+        worker = thread(name = "call-recorder", isDaemon = true) { pump(r, target, onChunk) }
         return true
     }
 
@@ -152,7 +155,7 @@ class AecRecorder(context: Context) {
         null
     }
 
-    private fun pump(r: AudioRecord, target: File) {
+    private fun pump(r: AudioRecord, target: File, onChunk: ((ByteArray, Int) -> Unit)?) {
         val buffer = ShortArray(1600)
         val bytes = ByteArray(buffer.size * 2)
         try {
@@ -175,6 +178,7 @@ class AecRecorder(context: Context) {
                     }
                     if (max > peak) peak = max
                     out.write(bytes, 0, count * 2)
+                    onChunk?.invoke(bytes.copyOf(count * 2), count * 2)
                 }
             }
         } catch (e: Exception) {

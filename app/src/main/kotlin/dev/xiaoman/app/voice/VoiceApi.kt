@@ -1,6 +1,9 @@
 package dev.xiaoman.app.voice
 
 import android.util.Log
+import dev.xiaoman.api.ApiErrors
+import dev.xiaoman.app.settings.AsrProvider
+import dev.xiaoman.app.settings.AsrSettings
 import dev.xiaoman.app.settings.TtsProvider
 import dev.xiaoman.app.settings.VoiceSettings
 import kotlinx.coroutines.Dispatchers
@@ -12,6 +15,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.File
+import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 /**
@@ -27,16 +31,49 @@ class VoiceApi {
         .writeTimeout(60, TimeUnit.SECONDS)
         .build()
 
-    /** Speech to text; throws with a readable message on failure. */
+    /** Speech to text（硅基 / OpenAI 兼容）；throws with a readable message on failure. */
     suspend fun transcribe(config: VoiceSettings, audio: File): String = withContext(Dispatchers.IO) {
         val body = MultipartBody.Builder().setType(MultipartBody.FORM)
             .addFormDataPart("model", config.model)
             .addFormDataPart("file", audio.name, audio.asRequestBody(audioType(audio)))
             .build()
-        client.newCall(request(config, "audio/transcriptions", body)).execute().use { response ->
-            val text = response.body?.string().orEmpty()
-            if (!response.isSuccessful) throw error(failure("识别失败", response.code, text))
-            text.field("text")?.takeIf { it.isNotBlank() } ?: throw error("识别结果为空")
+        try {
+            client.newCall(request(config, "audio/transcriptions", body)).execute().use { response ->
+                val text = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    throw error(ApiErrors.explain(response.code, text, "硅基语音识别").message("识别失败"))
+                }
+                text.field("text")?.takeIf { it.isNotBlank() } ?: throw error("识别结果为空")
+            }
+        } catch (e: IOException) {
+            // 网络类失败也要给能看懂的一句话，而不是 OkHttp 的原始异常名。
+            throw error("识别失败：网络不可达或超时（${e.message ?: e.javaClass.simpleName}）。请检查网络与识别地址。")
+        }
+    }
+
+    /**
+     * 按设置里的语音识别引擎转写一段录音：硅基直接上传；豆包把 WAV 里的 PCM 逐包推给流式接口。
+     * 豆包失败（连接/鉴权/超时/空结果）自动回落到已配置的硅基；两边都失败会拼出可读原因。
+     */
+    suspend fun transcribe(asr: AsrSettings, audio: File): String = withContext(Dispatchers.IO) {
+        if (asr.provider == AsrProvider.SILICONFLOW) {
+            return@withContext transcribe(asr.silicon, audio)
+        }
+        val doubao = asr.doubao
+        val failure = try {
+            val text = DoubaoAsr.transcribeFile(doubao, audio)
+            if (text.isNotBlank()) return@withContext text
+            "语音识别失败：豆包没有识别出内容。"
+        } catch (e: Exception) {
+            Log.w("Xiaoman", "doubao asr failed: ${e.message}")
+            e.message ?: "语音识别失败"
+        }
+        val fallback = asr.siliconFallback
+            ?: throw error("$failure 硅基兜底也没有配置，请到设置里填写语音识别。")
+        try {
+            transcribe(fallback, audio)
+        } catch (e: Exception) {
+            throw error("$failure 硅基兜底也失败：${e.message}")
         }
     }
 

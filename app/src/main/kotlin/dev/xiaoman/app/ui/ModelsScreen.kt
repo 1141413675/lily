@@ -170,8 +170,8 @@ fun ModelsScreen(graph: AppGraph, onBack: () -> Unit) {
             }
 
             SettingsGroup(stringResource(R.string.settings_asr)) {
-                KeyHint(stringResource(R.string.models_key_siliconflow))
-                VoiceSection(form.asr, showVoice = false) {
+                SettingsNote(stringResource(R.string.models_asr_provider_hint))
+                AsrSection(form.asr) {
                     form = form.copy(asr = it)
                     saved = false
                 }

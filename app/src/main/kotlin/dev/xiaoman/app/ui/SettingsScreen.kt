@@ -85,6 +85,7 @@ import dev.xiaoman.api.ModelRole
 import dev.xiaoman.app.AppGraph
 import dev.xiaoman.app.R
 import dev.xiaoman.app.appearance.ThemeMode
+import dev.xiaoman.app.settings.AsrProvider
 import dev.xiaoman.app.settings.ImageSettings
 import dev.xiaoman.app.settings.ModelVendor
 import dev.xiaoman.app.settings.ReplyMode
@@ -676,6 +677,66 @@ internal fun VoiceSection(voice: SettingsForm.VoiceForm, showVoice: Boolean, onC
             modifier = Modifier.fillMaxWidth(),
         )
     }
+}
+
+/** 语音识别引擎：硅基 / 豆包流式两套配置分开存，切换只改 provider，另一套原样保留。 */
+@Composable
+internal fun AsrSection(form: SettingsForm.AsrForm, onChange: (SettingsForm.AsrForm) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+        FilterChip(
+            selected = form.provider == AsrProvider.SILICONFLOW,
+            onClick = { onChange(form.copy(provider = AsrProvider.SILICONFLOW)) },
+            label = { Text(stringResource(R.string.models_asr_siliconflow)) },
+        )
+        FilterChip(
+            selected = form.provider == AsrProvider.DOUBAO,
+            onClick = { onChange(form.copy(provider = AsrProvider.DOUBAO)) },
+            label = { Text(stringResource(R.string.models_asr_doubao)) },
+        )
+    }
+    if (form.provider == AsrProvider.DOUBAO) {
+        DoubaoAsrSection(form.doubao) { onChange(form.copy(doubao = it)) }
+        SettingsNote(stringResource(R.string.models_asr_doubao_hint))
+    } else {
+        VoiceSection(form.silicon, showVoice = false) { onChange(form.copy(silicon = it)) }
+        SettingsNote(stringResource(R.string.models_key_siliconflow))
+    }
+    val missing = form.toSettings().missing
+    if (missing.isNotEmpty()) {
+        SettingsNote(stringResource(R.string.models_asr_incomplete, missing.joinToString("、")))
+    }
+}
+
+/** 豆包流式语音识别 2.0：地址固定，只填 API Key 与 Resource ID。 */
+@Composable
+internal fun DoubaoAsrSection(form: SettingsForm.DoubaoAsrForm, onChange: (SettingsForm.DoubaoAsrForm) -> Unit) {
+    var showKey by remember { mutableStateOf(false) }
+    OutlinedTextField(
+        value = form.token,
+        onValueChange = { onChange(form.copy(token = it)) },
+        label = { Text(stringResource(R.string.models_tts_access_token)) },
+        singleLine = true,
+        visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
+        trailingIcon = {
+            IconButton(onClick = { showKey = !showKey }) {
+                Icon(
+                    if (showKey) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                    contentDescription = stringResource(if (showKey) R.string.settings_hide_key else R.string.settings_show_key),
+                )
+            }
+        },
+        supportingText = { Text(stringResource(R.string.models_asr_doubao_fixed_url)) },
+        modifier = Modifier.fillMaxWidth(),
+    )
+    OutlinedTextField(
+        value = form.resourceId,
+        onValueChange = { onChange(form.copy(resourceId = it)) },
+        label = { Text(stringResource(R.string.models_tts_resource_id)) },
+        supportingText = { Text(stringResource(R.string.models_asr_resource_id_hint)) },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
 
 @Composable

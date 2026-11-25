@@ -1,5 +1,6 @@
 package dev.xiaoman.llm
 
+import dev.xiaoman.api.ApiErrors
 import dev.xiaoman.api.ChatMessage
 import dev.xiaoman.api.ChatRequest
 import dev.xiaoman.api.ChatResponse
@@ -73,7 +74,11 @@ class OpenAiCompatibleClient(
                     sleep(backoff(attempt++, null))
                     continue
                 }
-                throw LlmException(redact("Request to $url failed: ${e.message ?: e.javaClass.simpleName}"), retryable = true, cause = e)
+                throw LlmException(
+                    redact("请求模型失败：${e.message ?: e.javaClass.simpleName}。请检查网络、代理与 Base URL 是否可达。"),
+                    retryable = true,
+                    cause = e,
+                )
             }
             if (result.code in 200..299) return parseResponse(result.body)
             if (result.code == 400 && jsonMode && result.body.contains("response_format")) {
@@ -84,12 +89,19 @@ class OpenAiCompatibleClient(
             val providerCode = providerCode(result.body)
             // A configured spending/inference limit needs an account change, not backoff.
             val retryable = isRetryable(result.code) && providerCode != "SetLimitExceeded"
+            val failure = ApiErrors.explain(result.code, result.body, "模型服务")
             if (retryable && attempt < maxRetries) {
                 sleep(backoff(attempt++, result.retryAfter))
                 continue
             }
-            throw LlmException(redact("HTTP ${result.code} from $url: ${errorDetail(result.body)}"), result.code, retryable,
-                providerCode = providerCode)
+            throw LlmException(
+                redact(failure.message("模型请求失败")),
+                result.code,
+                retryable,
+                providerCode = providerCode,
+                serverMessage = failure.serverMessage?.let(::redact),
+                advice = failure.advice,
+            )
         }
     }
 

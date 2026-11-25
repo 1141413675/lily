@@ -53,7 +53,7 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
             putModel(OPERATOR, stored.operator)
             putVendors("chat", stored.chatVendors)
             putVendors("operator", stored.operatorVendors)
-            putVoice(ASR, stored.asr)
+            putAsr(stored.asr)
             putTts(stored.tts)
             putVoice(REALTIME, stored.realtime)
             putBoolean(REALTIME_ENABLED, stored.realtimeEnabled)
@@ -82,7 +82,8 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
             putString(OPERATOR + API_KEY, stored.operator.apiKey)
             putVendorKeys("chat", stored.chatVendors)
             putVendorKeys("operator", stored.operatorVendors)
-            putString(ASR + API_KEY, stored.asr.apiKey)
+            putString(ASR + API_KEY, stored.asr.silicon.apiKey)
+            putString(ASR_DOUBAO + API_KEY, stored.asr.doubao.apiKey)
             putString(TTS + API_KEY, stored.tts.silicon.apiKey)
             putString(TTS_DOUBAO + API_KEY, stored.tts.doubao.apiKey)
             putString(REALTIME + API_KEY, stored.realtime.apiKey)
@@ -143,7 +144,20 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
             // 档案里已有的其他厂商配置原样读回；当前这套以 chat / operator 为准。
             chatVendors = vendorProfiles("chat") + (chat.vendor to chat),
             operatorVendors = vendorProfiles("operator") + (operator.vendor to operator),
-            asr = voice(ASR, defaults.asr),
+            asr = AsrSettings(
+                provider = plain.getString(ASR_PROVIDER, null)
+                    ?.let { name -> AsrProvider.entries.firstOrNull { it.name == name } }
+                    ?: defaults.asr.provider,
+                // 旧安装的 asr.* 就是硅基配置，升级后原样读回。
+                silicon = voice(ASR, defaults.asr.silicon),
+                doubao = voice(ASR_DOUBAO, defaults.asr.doubao).copy(
+                    // 地址固定，不接受旧值或手填地址。
+                    baseUrl = VoiceSettings.DOUBAO_ASR_BASE_URL,
+                    provider = TtsProvider.DOUBAO,
+                    resourceId = plain.getString(ASR_DOUBAO_RESOURCE_ID, null)
+                        ?: defaults.asr.doubao.resourceId,
+                ),
+            ),
             tts = TtsSettings(
                 provider = plain.getString(TTS_PROVIDER, null)
                     ?.let { name -> TtsProvider.entries.firstOrNull { it.name == name } }
@@ -328,6 +342,14 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
         putFloat(prefix + SPEED, v.speed)
     }
 
+    /** 语音识别两套分开存；硅基继续用旧的 `asr.*` 键，旧安装升级后配置不丢。 */
+    private fun SharedPreferences.Editor.putAsr(a: AsrSettings) {
+        putString(ASR_PROVIDER, a.provider.name)
+        putVoice(ASR, a.silicon)
+        putVoice(ASR_DOUBAO, a.doubao)
+        putString(ASR_DOUBAO_RESOURCE_ID, a.doubao.resourceId)
+    }
+
     /** 两套朗读配置分开存；硅基继续用旧的 `tts.*` 键，旧安装升级后配置不丢。 */
     private fun SharedPreferences.Editor.putTts(t: TtsSettings) {
         putString(TTS_PROVIDER, t.provider.name)
@@ -416,6 +438,9 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
         private const val CHAT = "chat."
         private const val OPERATOR = "operator."
         private const val ASR = "asr."
+        private const val ASR_PROVIDER = "asr.provider"
+        private const val ASR_DOUBAO = "asr.doubao."
+        private const val ASR_DOUBAO_RESOURCE_ID = "asr.doubao.resourceId"
         private const val TTS = "tts."
         private const val TTS_DOUBAO = "tts.doubao."
         private const val TTS_PROVIDER = "tts.provider"

@@ -84,8 +84,16 @@ data class ChatResponse(
     val usage: Usage? = null,
 )
 
-class LlmException(message: String, val statusCode: Int? = null, val retryable: Boolean = false, cause: Throwable? = null,
+class LlmException(
+    message: String,
+    val statusCode: Int? = null,
+    val retryable: Boolean = false,
+    cause: Throwable? = null,
     val providerCode: String? = null,
+    /** 服务端原始 message（已脱敏、已限长），用于界面分开显示「服务端」与「建议」。 */
+    val serverMessage: String? = null,
+    /** 一句可操作的下一步；和 [message] 内容一致，便于界面单独排版。 */
+    val advice: String? = null,
 ) :
     Exception(message, cause)
 

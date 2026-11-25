@@ -4,7 +4,7 @@ import android.media.MediaMetadataRetriever
 import java.io.File
 
 /**
- * Local audio of chat voice messages: `u-<id>.m4a` (what the user said) and `a-<id>.mp3` (the
+ * Local audio of chat voice messages: `u-<id>.wav` (what the user said) and `a-<id>.mp3` (the
  * spoken reply), under `<files>/audio`. Chat rows hold absolute paths, so playback streams from
  * the file and never loads audio into memory.
  *
@@ -17,7 +17,7 @@ class AudioStore(val dir: File) {
         dir.mkdirs()
     }
 
-    fun userFile(id: Long) = File(dir, "u-$id.m4a")
+    fun userFile(id: Long) = File(dir, "u-$id.wav")
 
     fun replyFile(id: Long) = File(dir, "a-$id.mp3")
 
