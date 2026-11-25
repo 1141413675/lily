@@ -1,14 +1,14 @@
-# 小满（Xiaoman）
+# Lily
 
 [English](README.en.md)
 
-小满是一个跑在 Android 手机上的开源私人助手。你在它的 App 里聊天，它会记住你告诉它的事，
-也能替你操作手机上的其他 App，比如打车、点外卖、改系统设置。新场景以**技能**的形式添加：一个技能
-就是一个包含 `SKILL.md` 和可选 `flow.yaml` 的小文件夹，推到手机上即可生效，不需要重新打包 APK。
+Lily 是一款开源 Android AI 陪伴应用。你可以设定角色，通过文字和语音聊天，分享私密动态，并翻看一起留下的记忆。
 
-- 需要 Android 11（API 30）及以上。小满通过无障碍服务读取屏幕并执行操作。
+Lily 保留了上游的可选助理能力。启用后，它可以通过 Android 无障碍服务协助操作手机，也可以连接外部服务。开发者可以用包含 `SKILL.md` 和可选 `flow.yaml` 的技能目录扩展助理能力。
+
+- Android 版需要 Android 11（API 30）及以上。
 - iOS 无法在手机上单独运行；可用 Mac + WebDriverAgent 的方式试用，见 [docs/ios.md](docs/ios.md)。
-- 可接入 MCP 服务（高德地图、腾讯地图、滴滴、12306 等），查询和下单类的事情可以不操作手机，见 [docs/mcp.md](docs/mcp.md)；安卓 App 在「服务」页一键勾选。
+- 可在 Android 应用的「外部服务」中启用 MCP 连接，例如高德地图、腾讯地图、滴滴和 12306。详见 [MCP 配置](docs/mcp.md)。
 - iPhone 不装 App 也能用：网页版添加到主屏幕后聊天、勾选 MCP 服务，见 [docs/web.md](docs/web.md)。
 - 模型：任意兼容 OpenAI 接口的服务都可以，例如火山方舟、阿里云百炼、OpenRouter、vLLM、Ollama。
   需要配置两个模型：一个聊天模型，一个能看图的屏幕操作模型。
@@ -47,19 +47,20 @@ scripts/gradle.sh test :app:assembleDebug            # 之后可以离线构建
 ```
 
 `scripts/gradle.sh` 封装了 `./gradlew`，构建产物放在仓库目录之外，保持工作区干净。可用的环境变量见脚本开头的注释。
+GitHub Actions 的 CI 工作流也会生成 Lily 调试版 APK。
 
 ## 使用
 
-1. 安装 debug APK，打开小满。
-2. 在「设置」里分别填写聊天模型和操作模型的 Base URL、模型名称和 API Key。
-3. 按提示开启小满无障碍服务。
-4. 回到「聊天」，试试：「帮我打车回家」「记住我家在……」「把 Wi-Fi 打开」。
+1. 安装调试版 APK，打开 Lily。
+2. 进入「我的」→「模型与接口」，填写聊天模型和操作模型的 Base URL、模型名称和 API Key。
+3. 在「我的」中设定角色，再回到「聊天」开始对话。
+4. 如果想使用手机操作功能，按应用提示开启 Lily 的无障碍服务。
 
 以火山方舟为例，Base URL 填 `https://ark.cn-beijing.volces.com/api/v3`（也是默认值），模型填方舟上的模型或接入点 ID。
 
 ## 课堂实践
 
-[学生动手手册](docs/classroom.md)：TRAE 训练营第二期“用 TRAE 搭建你的个人 Agent 助手”的配套手册。第一节装好小满并跑通淘宝任务，第二节蒸馏你自己，再用 TRAE 改外卖技能、车票技能和首页入口。
+[学生动手手册](docs/classroom.md) 是基于上游小满项目的 TRAE 训练营教材，包含手机任务、档案和技能练习。
 
 ## 技能与开发者 CLI
 
@@ -76,7 +77,7 @@ python3 cli/xiaoman.py traces show <run_id>
 ## 目录结构
 
 ```
-xiaoman/
+lily/
 ├── core-api/        # 接口与数据结构，其他模块只依赖它
 ├── core-llm/        # 兼容 OpenAI 的模型客户端
 ├── core-memory/     # 记忆：Basic Memory 格式的 Markdown 笔记 + 中文检索
@@ -106,4 +107,4 @@ xiaoman/
 
 ## 许可证
 
-MIT，见 [LICENSE](LICENSE)。
+Lily 基于小满（Xiaoman）项目，沿用 MIT 许可证并保留上游版权声明。详见 [LICENSE](LICENSE)。

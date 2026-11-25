@@ -11,19 +11,20 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -41,6 +42,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
@@ -68,20 +71,20 @@ data class DreamState(
     val failed: Boolean = false,
 )
 
-class DreamViewModel(private val graph: AppGraph) : ViewModel() {
+private class DreamViewModel(private val conversation: AppGraph.Conversation) : ViewModel() {
     private val _state = MutableStateFlow(DreamState())
     val state: StateFlow<DreamState> = _state.asStateFlow()
 
     init {
-        viewModelScope.launch { graph.dream.revision.collect { load() } }
+        viewModelScope.launch { conversation.dream.revision.collect { load() } }
         load()
     }
 
     fun load() {
         viewModelScope.launch {
             _state.update { it.copy(loading = it.days.isEmpty(), failed = false) }
-            val config = graph.dreamStore.config()
-            runCatching { graph.dreamStore.days() }
+            val config = conversation.dreamStore.config()
+            runCatching { conversation.dreamStore.days() }
                 .onSuccess { days ->
                     _state.update { it.copy(config = config, days = days, loading = false) }
                 }
@@ -91,28 +94,29 @@ class DreamViewModel(private val graph: AppGraph) : ViewModel() {
         }
     }
 
-    fun setEnabled(enabled: Boolean) = save(graph.dreamStore.config().copy(enabled = enabled))
+    fun setEnabled(enabled: Boolean) = save(conversation.dreamStore.config().copy(enabled = enabled))
 
-    fun setAuto(auto: Boolean) = save(graph.dreamStore.config().copy(autoLowRisk = auto))
+    fun setAuto(auto: Boolean) = save(conversation.dreamStore.config().copy(autoLowRisk = auto))
 
-    fun setTime(time: String) = save(graph.dreamStore.config().copy(time = time))
+    fun setTime(time: String) = save(conversation.dreamStore.config().copy(time = time))
 
-    fun reject(day: DreamDay, item: DreamItem) = graph.dream.rejectItem(day.date, item.id)
+    fun reject(day: DreamDay, item: DreamItem) = conversation.dream.rejectItem(day.date, item.id)
 
-    fun restore(day: DreamDay, item: DreamItem) = graph.dream.restoreItem(day.date, item.id)
+    fun restore(day: DreamDay, item: DreamItem) = conversation.dream.restoreItem(day.date, item.id)
 
     private fun save(config: DreamConfig) {
-        graph.dreamStore.saveConfig(config)
-        graph.dream.schedule()
+        conversation.dreamStore.saveConfig(config)
+        conversation.dream.schedule()
         _state.update { it.copy(config = config) }
     }
 }
 
 /** 夜里：不是任务队列，是「她昨晚想了什么」的清晨一页。 */
 @Composable
-fun DreamScreen(graph: AppGraph, onBack: () -> Unit) {
-    val vm = viewModel { DreamViewModel(graph) }
+internal fun DreamScreen(conversation: AppGraph.Conversation, onBack: () -> Unit) {
+    val vm = viewModel(key = "dream-${conversation.id}") { DreamViewModel(conversation) }
     val state by vm.state.collectAsStateWithLifecycle()
+    val settings by conversation.effectiveSettings.collectAsStateWithLifecycle()
     BackHandler(onBack = onBack)
 
     val latest = remember(state.days) {
@@ -146,37 +150,26 @@ fun DreamScreen(graph: AppGraph, onBack: () -> Unit) {
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 Column(
                     Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-                        .padding(horizontal = Space.page),
+                        .padding(horizontal = Space.page)
+                        .padding(bottom = if (undo != null) 64.dp else 0.dp),
                     verticalArrangement = Arrangement.spacedBy(Space.sm),
                 ) {
                     when {
                         state.loading -> DreamSkeleton()
-                        state.failed -> Box(Modifier.fillMaxWidth().padding(top = 96.dp), contentAlignment = Alignment.Center) {
-                            Text(
-                                stringResource(R.string.dream_night_failed),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = LocalXiaomanPalette.current.ink3,
-                                modifier = Modifier.tapTarget().clickable { vm.load() }.padding(Space.lg),
-                            )
-                        }
-                        latest == null -> Box(Modifier.fillMaxWidth().padding(top = 96.dp), contentAlignment = Alignment.Center) {
-                            Text(
-                                stringResource(R.string.dream_night_empty),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = LocalXiaomanPalette.current.ink3,
-                            )
-                        }
+                        state.failed -> DreamPlaceholder(stringResource(R.string.dream_night_failed), onRetry = vm::load)
+                        latest == null -> DreamPlaceholder(stringResource(R.string.dream_night_empty))
                         else -> {
                             val results = latest.items.filter(::isResult)
                             Text(
                                 stringResource(R.string.dream_night_date, nightDate(latest.date)),
                                 style = MaterialTheme.typography.labelMedium,
-                                color = LocalXiaomanPalette.current.ink2,
+                                fontWeight = FontWeight.SemiBold,
+                                color = LocalXiaomanPalette.current.accent,
                                 modifier = Modifier.padding(top = Space.md),
                             )
                             Text(
-                                stringResource(R.string.dream_night_intro, results.size),
-                                style = MaterialTheme.typography.bodyMedium,
+                                stringResource(R.string.dream_night_intro, settings.persona.pronoun, results.size),
+                                style = MaterialTheme.typography.titleMedium,
                                 color = LocalXiaomanPalette.current.ink,
                             )
                             results.forEach { item ->
@@ -209,6 +202,31 @@ fun DreamScreen(graph: AppGraph, onBack: () -> Unit) {
                 undo?.let { (day, item) -> vm.restore(day, item) }
                 undo = null
             })
+        }
+    }
+}
+
+@Composable
+private fun DreamPlaceholder(text: String, onRetry: (() -> Unit)? = null) {
+    val palette = LocalXiaomanPalette.current
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(top = Space.md),
+        shape = RoundedCornerShape(Radius.lg),
+        color = palette.surface,
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(Space.block),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(Space.sm),
+        ) {
+            Box(Modifier.size(48.dp).background(palette.accentSoft, CircleShape), contentAlignment = Alignment.Center) {
+                Icon(Icons.Filled.DarkMode, contentDescription = null, tint = palette.accentOnSoft)
+            }
+            if (onRetry != null) {
+                TextButton(onClick = onRetry, modifier = Modifier.tapTarget()) { Text(text, textAlign = TextAlign.Center) }
+            } else {
+                Text(text, style = MaterialTheme.typography.bodyMedium, color = palette.ink2, textAlign = TextAlign.Center)
+            }
         }
     }
 }
@@ -250,7 +268,7 @@ private fun DreamResultCard(item: DreamItem, onWrong: () -> Unit) {
                 item.title.trim().ifBlank { item.observations.firstOrNull()?.content?.trim().orEmpty() },
                 style = MaterialTheme.typography.bodyMedium,
                 color = palette.ink,
-                maxLines = 4,
+                maxLines = 6,
                 overflow = TextOverflow.Ellipsis,
             )
             Row(Modifier.fillMaxWidth().padding(top = Space.xs), verticalAlignment = Alignment.CenterVertically) {
@@ -322,8 +340,7 @@ private fun DreamSkeleton() {
 }
 
 /**
- * 规范没有定义夜间整理设置的落点；开关与时间先安静地留在页尾，
- * 不删功能，也不提供手动触发。
+ * 夜间整理的开关、时间与自动处理收在同一组。
  */
 @Composable
 private fun NightSettings(config: DreamConfig, vm: DreamViewModel) {
@@ -334,54 +351,46 @@ private fun NightSettings(config: DreamConfig, vm: DreamViewModel) {
         Text(
             stringResource(R.string.dream_night_settings),
             style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
             color = palette.ink2,
+            modifier = Modifier.padding(start = Space.sm, bottom = Space.sm),
         )
-        Row(
-            Modifier.fillMaxWidth().heightIn(min = SizeTokens.touchTarget).padding(top = Space.sm),
-            verticalAlignment = Alignment.CenterVertically,
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(Radius.lg),
+            color = palette.surface,
         ) {
-            Text(stringResource(R.string.dream_enabled), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-            XiaomanSwitch(checked = config.enabled) { vm.setEnabled(it) }
-        }
-        Spacer(Modifier.height(Space.sm))
-        Row(
-            Modifier.fillMaxWidth().heightIn(min = SizeTokens.touchTarget),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(stringResource(R.string.dream_time), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-            OutlinedTextField(
-                value = time,
-                onValueChange = { time = it },
-                singleLine = true,
-                isError = !valid,
-                textStyle = MaterialTheme.typography.bodySmall,
-                shape = RoundedCornerShape(Radius.sm),
-                modifier = Modifier.width(96.dp),
-            )
-            TextButton(
-                onClick = { vm.setTime(time.trim()) },
-                enabled = valid && time.trim() != config.time,
-                modifier = Modifier.tapTarget(),
-            ) {
-                Text(stringResource(R.string.dream_time_save))
+            Column(Modifier.padding(horizontal = Space.lg, vertical = Space.xs)) {
+                SettingsRow(
+                    title = stringResource(R.string.dream_enabled),
+                    trailing = { XiaomanSwitch(checked = config.enabled) { vm.setEnabled(it) } },
+                )
+                HorizontalDivider(color = palette.line)
+                OutlinedTextField(
+                    value = time,
+                    onValueChange = { time = it },
+                    label = { Text(stringResource(R.string.dream_time)) },
+                    singleLine = true,
+                    isError = !valid,
+                    textStyle = MaterialTheme.typography.bodyMedium,
+                    shape = RoundedCornerShape(Radius.sm),
+                    modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
+                )
+                TextButton(
+                    onClick = { vm.setTime(time.trim()) },
+                    enabled = valid && time.trim() != config.time,
+                    modifier = Modifier.align(Alignment.End).tapTarget(),
+                ) {
+                    Text(stringResource(R.string.dream_time_save))
+                }
+                HorizontalDivider(color = palette.line)
+                SettingsRow(
+                    title = stringResource(R.string.dream_auto),
+                    description = stringResource(R.string.dream_auto_desc),
+                    trailing = { XiaomanSwitch(checked = config.autoLowRisk) { vm.setAuto(it) } },
+                )
             }
         }
-        Spacer(Modifier.height(Space.sm))
-        Row(
-            Modifier.fillMaxWidth().heightIn(min = SizeTokens.touchTarget),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(stringResource(R.string.dream_auto), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-            XiaomanSwitch(checked = config.autoLowRisk) { vm.setAuto(it) }
-        }
-        Text(
-            stringResource(R.string.dream_auto_desc),
-            style = MaterialTheme.typography.labelMedium.copy(
-                fontWeight = androidx.compose.ui.text.font.FontWeight.Normal,
-            ),
-            color = palette.ink3,
-        )
-        Spacer(Modifier.height(Space.xl))
     }
 }
 

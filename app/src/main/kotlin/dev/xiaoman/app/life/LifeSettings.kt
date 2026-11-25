@@ -1,9 +1,12 @@
 package dev.xiaoman.app.life
 
+import kotlinx.serialization.Serializable
+
 /**
  * 她自己的生活设定：只影响她之后写的动态与措辞，不改写历史记录。
  * 字段与设计稿「她的生活」一致；全空时动态流显示空状态，不发模板凑数。
  */
+@Serializable
 data class LifeSettings(
     val city: String = "",
     /** 例如「在小书店选书，周三休息」。 */

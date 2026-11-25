@@ -14,17 +14,22 @@ import java.time.ZoneId
  *
  * Alarms do not survive a reboot unless the app starts again; a fresh app start also re-arms it.
  */
-class DreamScheduler(private val context: Context, private val config: () -> DreamConfig) {
+class DreamScheduler(
+    private val context: Context,
+    private val agentId: String? = null,
+    private val config: () -> DreamConfig,
+) {
     private val alarms = context.getSystemService(AlarmManager::class.java)
 
     fun schedule() {
-        if (!config().enabled) {
+        val current = config()
+        if (!current.enabled) {
             cancel()
             return
         }
         val pending = pendingIntent()
         alarms.cancel(pending)
-        alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, nextTriggerAt(config().time), pending)
+        alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, nextTriggerAt(current.time), pending)
     }
 
     fun cancel() = alarms.cancel(pendingIntent())
@@ -40,6 +45,10 @@ class DreamScheduler(private val context: Context, private val config: () -> Dre
 
     private fun pendingIntent(): PendingIntent {
         val intent = Intent(context, DreamReceiver::class.java).setAction(DreamReceiver.ACTION_DREAM)
+        if (agentId != null) {
+            intent.identifier = agentId
+            intent.putExtra(DreamReceiver.EXTRA_AGENT_ID, agentId)
+        }
         return PendingIntent.getBroadcast(
             context,
             0x0D2E,

@@ -2,14 +2,27 @@ package dev.xiaoman.app.image
 
 import dev.xiaoman.app.media.SceneryStore
 import dev.xiaoman.app.session.ChatItem
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import java.io.File
-import java.util.concurrent.atomic.AtomicBoolean
+
+sealed interface ImageRequestFeedback {
+    data object Generating : ImageRequestFeedback
+    data object LimitReached : ImageRequestFeedback
+    data object Disabled : ImageRequestFeedback
+    data class Failed internal constructor(
+        internal val userText: String,
+        internal val replyText: String,
+    ) : ImageRequestFeedback
+}
 
 /**
- * 她主动发图：在回复之后按语境挑来源，失败静默降级，不弹错误、不发明理由。
+ * 角色发图：在回复之后按语境挑来源，只有明确要图时才显示生成状态。
  *
  * 1. 回忆过去：用户明确指向聊天里出现过的旧图时，复用原路径，不复制、不重复占空间。
  * 2. 此刻想看：用户说「想看看 / 你在干嘛 / 给我看看 / 发张自拍」时，按当前对话的具体细节
@@ -32,27 +45,67 @@ class ChatImages(
     private val promptFor: (selfie: Boolean, context: String) -> String = { _, _ -> "" },
     private val now: () -> Long = System::currentTimeMillis,
 ) {
-    private val running = AtomicBoolean(false)
+    private val sharing = Mutex()
+    private val feedbackState = MutableStateFlow<ImageRequestFeedback?>(null)
+    val feedback = feedbackState.asStateFlow()
 
     fun afterReply(userText: String, replyText: String) {
-        if (userText.isBlank() && replyText.isBlank()) return
-        if (!settings().image.enabled) return
+        if (DECLINE_IMAGE_CUE.containsMatchIn(userText)) return
+        val explicit = EXPLICIT_IMAGE_CUE.containsMatchIn(userText)
+        if (!explicit && (!settings().image.enabled ||
+                (!WANT_CUE.containsMatchIn(userText) && !RECALL_CUE.containsMatchIn(userText)))) return
+        launchShare(userText, replyText, explicit)
+    }
+
+    fun retry() {
+        val failed = feedbackState.value as? ImageRequestFeedback.Failed ?: return
+        if (feedbackState.compareAndSet(failed, ImageRequestFeedback.Generating)) {
+            launchShare(failed.userText, failed.replyText, explicit = true)
+        }
+    }
+
+    fun dismissFeedback() {
+        val current = feedbackState.value
+        if (current != ImageRequestFeedback.Generating) feedbackState.compareAndSet(current, null)
+    }
+
+    private fun launchShare(userText: String, replyText: String, explicit: Boolean) {
         scope.launch(Dispatchers.IO) {
-            if (!running.compareAndSet(false, true)) return@launch
+            if (explicit) {
+                sharing.lock()
+            } else if (!sharing.tryLock()) {
+                return@launch
+            }
             try {
-                share(userText, replyText)
+                val result = share(userText, replyText) {
+                    if (explicit) feedbackState.value = ImageRequestFeedback.Generating
+                }
+                if (explicit) {
+                    feedbackState.value = when (result) {
+                        ShareResult.SHARED, ShareResult.IGNORED -> null
+                        ShareResult.DISABLED -> ImageRequestFeedback.Disabled
+                        ShareResult.LIMIT_REACHED -> ImageRequestFeedback.LimitReached
+                        ShareResult.FAILED -> ImageRequestFeedback.Failed(userText, replyText)
+                    }
+                }
+            } catch (e: CancellationException) {
+                if (explicit) feedbackState.value = null
+                throw e
             } catch (e: Exception) {
-                // 发图是锦上添花：任何失败都不能影响聊天。
+                if (explicit) feedbackState.value = ImageRequestFeedback.Failed(userText, replyText)
             } finally {
-                running.set(false)
+                sharing.unlock()
             }
         }
     }
 
+    internal enum class ShareResult { SHARED, IGNORED, DISABLED, LIMIT_REACHED, FAILED }
+
     /** 直接跑一次来源选择；[afterReply] 在 IO 线程调用它，测试也用它避免等调度。 */
-    internal suspend fun share(userText: String, replyText: String) {
+    internal suspend fun share(userText: String, replyText: String, onGenerating: () -> Unit = {}): ShareResult {
+        if (DECLINE_IMAGE_CUE.containsMatchIn(userText)) return ShareResult.IGNORED
         val image = settings().image
-        if (!image.enabled) return
+        if (!image.enabled) return ShareResult.DISABLED
         val context = "$userText\n$replyText"
 
         // 1. 回忆过去：只引用聊天里出现过的原图，不重新生成、不下载。
@@ -60,35 +113,45 @@ class ChatImages(
             pickReuse(userText)?.let { path ->
                 store.markShared(path)
                 post(path)
-                return
+                return ShareResult.SHARED
             }
         }
 
         // 2. 此刻想看：按这轮对话的细节生成，不随机挑生活场景。
-        val wantsToSee = WANT_CUE.containsMatchIn(userText)
-        if (wantsToSee) {
-            if (store.canGenerate(image.dailyLimit)) {
-                val portrait = portraitFile()
-                val selfie = image.includeSelfie && portrait != null &&
-                    SELFIE_CUE.containsMatchIn(userText) && !SCENE_OBJECT.containsMatchIn(userText)
-                val prompt = promptFor(selfie, context)
-                val bytes = if (prompt.isBlank()) null else generate?.invoke(prompt, if (selfie) portrait else null)
-                if (bytes != null && bytes.isNotEmpty()) {
-                    val saved = store.save(bytes)
-                    if (saved != null) {
-                        store.markGenerated()
-                        store.markShared(saved.absolutePath)
-                        post(saved.absolutePath)
-                        return
-                    }
+        val wantsToSee = WANT_CUE.containsMatchIn(userText) || EXPLICIT_IMAGE_CUE.containsMatchIn(userText)
+        if (!wantsToSee) return ShareResult.IGNORED
+
+        val canGenerate = store.canGenerate(image.dailyLimit)
+        if (canGenerate) {
+            val portrait = portraitFile()
+            val selfie = image.includeSelfie && portrait != null &&
+                SELFIE_CUE.containsMatchIn(userText) && !SCENE_OBJECT.containsMatchIn(userText)
+            val prompt = promptFor(selfie, context)
+            val bytes = if (prompt.isBlank() || generate == null) null else {
+                onGenerating()
+                try {
+                    generate.invoke(prompt, if (selfie) portrait else null)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    null
                 }
             }
-            // 3. 图库兜底：无 Key、额度用尽或生成失败才走到这里；库空则静默结束。
-            scenery.maybePick(context, now())?.let { picked ->
-                store.markShared(picked.file)
-                post(picked.file)
+            val saved = bytes?.let(store::save)
+            if (saved != null) {
+                store.markGenerated()
+                store.markShared(saved.absolutePath)
+                post(saved.absolutePath)
+                return ShareResult.SHARED
             }
         }
+        // 3. 图库兜底：无 Key、额度用尽或生成失败时仍可分享匹配的图片。
+        scenery.maybePick(context, now())?.let { picked ->
+            store.markShared(picked.file)
+            post(picked.file)
+            return ShareResult.SHARED
+        }
+        return if (canGenerate) ShareResult.FAILED else ShareResult.LIMIT_REACHED
     }
 
     /** 从聊天记录里挑一张最贴近当前话题的旧图；没有可用文件返回 null。 */
@@ -116,6 +179,23 @@ class ChatImages(
     }
 
     private companion object {
+        /** 直接点名要图片；普通的「你在干嘛」不显示发图状态。 */
+        val EXPLICIT_IMAGE_CUE = Regex(
+            "(想看看(?:你|现在|此刻|.{0,6}(?:照片|图片|自拍))|给我看看|让我看看|看看你|" +
+                "(?:发|拍|生成|画|来)(?:一?张|个)(?:照片|图片|图|自拍)|" +
+                "(?:给我|帮我|请)(?:发|拍|生成|画)(?:照片|图片|图|自拍)|" +
+                "(?:send|show|take|generate)(?: me)? (?:a |your )?(?:photo|pic|picture|image|selfie)\\b)",
+            RegexOption.IGNORE_CASE,
+        )
+
+        val DECLINE_IMAGE_CUE = Regex(
+            "(?:别|不要|不用|不必)\\s*(?:再|给我|帮我|先|现在|主动|\\s)*(?:发|拍|生成|画|分享)" +
+                ".{0,8}(?:图|照片|自拍)|" +
+                "\\b(?:don't|do not|no need to)\\s+(?:send|show|take|generate)" +
+                ".{0,18}\\b(?:photo|pic|picture|image|selfie)\\b",
+            RegexOption.IGNORE_CASE,
+        )
+
         /** 「昨天那张 / 上次发的照片 / 你拍的那张」这类明确指向旧图的话。 */
         val RECALL_CUE = Regex(
             "(昨天|上次|那天|之前|刚才|还记得|发过|拍过).{0,10}(图|照片|拍的|发的|自拍|那张|这张)|(那张|这张)(图|照片)",

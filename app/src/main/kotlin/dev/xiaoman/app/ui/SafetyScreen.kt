@@ -11,8 +11,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -22,8 +23,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
@@ -71,20 +70,24 @@ fun SafetyScreen(graph: AppGraph, onBack: () -> Unit) {
     val vm = viewModel { SafetyViewModel(graph) }
     val state by vm.state.collectAsStateWithLifecycle()
     var confirmClear by remember { mutableStateOf(false) }
+    val palette = LocalXiaomanPalette.current
     BackHandler(onBack = onBack)
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(start = Space.xs, top = Space.xs, end = Space.page), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = Space.xl, end = Space.page, top = Space.xl),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             IconButton(onClick = onBack, modifier = Modifier.size(SizeTokens.touchTarget)) {
                 Icon(
-                    Icons.AutoMirrored.Filled.ArrowBack,
+                    Icons.AutoMirrored.Outlined.ArrowBack,
                     contentDescription = stringResource(R.string.back),
-                    tint = LocalXiaomanPalette.current.ink2,
+                    tint = palette.ink2,
                     modifier = Modifier.size(IconSize.lg),
                 )
             }
             Text(
                 stringResource(R.string.safety_title),
-                Modifier.weight(1f).padding(start = Space.sm),
+                Modifier.weight(1f),
                 style = MaterialTheme.typography.titleLarge,
             )
             TextButton(
@@ -95,22 +98,30 @@ fun SafetyScreen(graph: AppGraph, onBack: () -> Unit) {
                 Text(stringResource(R.string.safety_clear))
             }
         }
-        SettingsNote(
-            stringResource(R.string.safety_hint),
-            Modifier.padding(horizontal = Space.page, vertical = Space.xs),
-        )
-        RefusalSection(graph)
-        if (!state.loading && state.entries.isEmpty()) {
-            SettingsNote(
-                stringResource(R.string.safety_empty),
-                Modifier.padding(horizontal = Space.page, vertical = Space.lg),
+        if (state.loading) {
+            LinearProgressIndicator(
+                Modifier.fillMaxWidth().padding(horizontal = Space.page, vertical = Space.sm),
+                trackColor = palette.accentSoft,
             )
         }
         LazyColumn(
-            Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = Space.page, end = Space.page, top = Space.lg, bottom = Space.page),
+            Modifier.weight(1f).fillMaxWidth(),
+            contentPadding = PaddingValues(start = Space.page, end = Space.page, top = Space.sm, bottom = Space.page),
             verticalArrangement = Arrangement.spacedBy(Space.lg),
         ) {
+            item { SettingsNote(stringResource(R.string.safety_hint)) }
+            item { RefusalSection(graph) }
+            if (!state.loading && state.entries.isEmpty()) {
+                item {
+                    Surface(
+                        Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(Radius.lg),
+                        color = palette.surface,
+                    ) {
+                        SettingsNote(stringResource(R.string.safety_empty), Modifier.padding(Space.xl))
+                    }
+                }
+            }
             items(state.entries) { entry ->
                 SafetyRow(entry)
             }
@@ -122,10 +133,13 @@ fun SafetyScreen(graph: AppGraph, onBack: () -> Unit) {
             title = { Text(stringResource(R.string.safety_clear_title)) },
             text = { Text(stringResource(R.string.safety_clear_text)) },
             confirmButton = {
-                TextButton(onClick = {
-                    vm.clear()
-                    confirmClear = false
-                }) { Text(stringResource(R.string.safety_clear_yes)) }
+                TextButton(
+                    onClick = {
+                        vm.clear()
+                        confirmClear = false
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) { Text(stringResource(R.string.safety_clear_yes)) }
             },
             dismissButton = {
                 TextButton(onClick = { confirmClear = false }) { Text(stringResource(R.string.cancel)) }
@@ -139,65 +153,79 @@ private fun RefusalSection(graph: AppGraph) {
     var tick by remember { mutableStateOf(0) }
     val stats = remember(tick) { graph.refusals.stats() }
     val recent = remember(tick) { graph.refusals.recent(3) }
-    Column(
-        Modifier.fillMaxWidth().padding(horizontal = Space.page, vertical = Space.lg),
-        verticalArrangement = Arrangement.spacedBy(Space.sm),
+    val palette = LocalXiaomanPalette.current
+    Surface(
+        Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(Radius.lg),
+        color = palette.surface,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                stringResource(R.string.settings_refusal_title),
-                Modifier.weight(1f),
-                style = MaterialTheme.typography.labelMedium,
-                color = LocalXiaomanPalette.current.ink2,
-            )
-            TextButton(
-                onClick = { graph.refusals.clear(); tick++ },
-                colors = ButtonDefaults.textButtonColors(contentColor = LocalXiaomanPalette.current.ink3),
+        Column(Modifier.padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Space.sm),
             ) {
-                Text(stringResource(R.string.settings_refusal_clear), style = MaterialTheme.typography.labelMedium)
-            }
-        }
-        SettingsNote(
-            stringResource(R.string.settings_refusal_stats, stats.checks, stats.refusals, stats.rate * 100, stats.retriesLastHour),
-        )
-        if (recent.isEmpty()) {
-            SettingsNote(stringResource(R.string.settings_refusal_empty))
-        } else {
-            recent.forEach { e ->
                 Text(
-                    "${timeText(e.at)} · ${e.topic} · ${e.outcome ?: e.kind}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = LocalXiaomanPalette.current.ink3,
+                    stringResource(R.string.settings_refusal_title),
+                    Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = palette.ink,
                 )
+                TextButton(
+                    onClick = { graph.refusals.clear(); tick++ },
+                    colors = ButtonDefaults.textButtonColors(contentColor = palette.ink2),
+                ) {
+                    Text(stringResource(R.string.settings_refusal_clear), style = MaterialTheme.typography.labelMedium)
+                }
             }
+            SettingsNote(
+                stringResource(R.string.settings_refusal_stats, stats.checks, stats.refusals, stats.rate * 100, stats.retriesLastHour),
+            )
+            if (recent.isEmpty()) {
+                SettingsNote(stringResource(R.string.settings_refusal_empty))
+            } else {
+                recent.forEach { e ->
+                    Text(
+                        "${timeText(e.at)} · ${e.topic} · ${e.outcome ?: e.kind}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.ink2,
+                    )
+                }
+            }
+            SettingsNote(stringResource(R.string.settings_refusal_note))
         }
-        SettingsNote(stringResource(R.string.settings_refusal_note))
     }
 }
 
 @Composable
 private fun SafetyRow(entry: SafetyEntry) {
     val palette = LocalXiaomanPalette.current
-    Column(
-        Modifier.fillMaxWidth().padding(vertical = Space.xs),
-        verticalArrangement = Arrangement.spacedBy(Space.xs),
+    val awaitingConfirmation = entry.stage == "confirm"
+    Surface(
+        Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(Radius.lg),
+        color = palette.surface,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(stageLabel(entry.stage), style = MaterialTheme.typography.labelMedium, color = stageColor(entry.stage))
-            Text(
-                timeText(entry.time),
-                Modifier.weight(1f).padding(start = Space.sm),
-                style = MaterialTheme.typography.labelSmall,
-                color = palette.ink3,
-            )
-        }
-        Text(entry.instruction, style = MaterialTheme.typography.bodyLarge, color = palette.ink)
-        val detail = buildString {
-            append(entry.rule)
-            if (entry.matched.isNotBlank()) append(" · ").append(entry.matched)
-        }
-        if (detail.isNotBlank()) {
-            Text(detail, style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Normal), color = palette.ink3)
+        Column(Modifier.padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+            Surface(
+                shape = RoundedCornerShape(Radius.sm),
+                color = if (awaitingConfirmation) palette.accentSoft else palette.errorContainer,
+            ) {
+                Text(
+                    stageLabel(entry.stage),
+                    modifier = Modifier.padding(horizontal = Space.sm, vertical = Space.xs),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (awaitingConfirmation) palette.accentOnSoft else palette.onErrorContainer,
+                )
+            }
+            Text(entry.instruction, style = MaterialTheme.typography.bodyLarge, color = palette.ink)
+            val detail = buildString {
+                append(entry.rule)
+                if (entry.matched.isNotBlank()) append(" · ").append(entry.matched)
+            }
+            if (detail.isNotBlank()) {
+                Text(detail, style = MaterialTheme.typography.bodySmall, color = palette.ink2)
+            }
+            Text(timeText(entry.time), style = MaterialTheme.typography.labelSmall, color = palette.ink3)
         }
     }
 }
@@ -209,12 +237,6 @@ private fun stageLabel(stage: String): String = when (stage) {
     "action" -> stringResource(R.string.safety_stage_action)
     "confirm" -> stringResource(R.string.safety_stage_confirm)
     else -> stage
-}
-
-@Composable
-private fun stageColor(stage: String) = when (stage) {
-    "confirm" -> MaterialTheme.colorScheme.primary
-    else -> MaterialTheme.colorScheme.error
 }
 
 private fun timeText(millis: Long): String =

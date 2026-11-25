@@ -1,6 +1,8 @@
 package dev.xiaoman.app.settings
 
 import android.content.Context
+import android.content.SharedPreferences
+import java.time.LocalDate
 import org.robolectric.RuntimeEnvironment
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -90,5 +92,122 @@ class SettingsTest {
         assertNull(form.copy(maxSteps = "0").toSettings())
         assertNull(form.copy(chat = form.chat.copy(temperature = "hot")).toSettings())
         assertNull(form.copy(chat = form.chat.copy(temperature = "")).toSettings()?.chat?.temperature)
+    }
+
+    @Test fun `explicitly selected call reply survives reloading the settings`() {
+        val settings = store()
+        settings.save(settings.current.copy(replyMode = ReplyMode.CALL, replyModeChosen = true))
+        val reloaded = store().current
+        assertEquals(ReplyMode.CALL, reloaded.replyMode)
+        assertTrue(reloaded.replyModeChosen)
+        assertFalse(reloaded.replyModeNotice)
+    }
+
+    @Test fun `realtime voice can be enabled and disabled across reloads`() {
+        val settings = store()
+        val enabled = requireNotNull(SettingsForm.of(settings.current).copy(realtimeEnabled = true).toSettings())
+        settings.save(enabled)
+        assertTrue(store().current.realtimeEnabled)
+
+        val disabled = requireNotNull(SettingsForm.of(store().current).copy(realtimeEnabled = false).toSettings())
+        settings.save(disabled)
+        assertFalse(store().current.realtimeEnabled)
+    }
+
+    @Test fun `memory embeddings are off by default and persist separately from chat`() {
+        val settings = store()
+        assertFalse(settings.current.memoryEmbedding.active)
+        val embeddingKey = "embedding-private-key"
+        val draft = MemoryEmbeddingSettings(
+            enabled = true,
+            baseUrl = " https://embedding.example.com/v1/ ",
+            model = " test-model ",
+            apiKey = embeddingKey,
+        )
+        val form = SettingsForm.of(sample).copy(memoryEmbedding = draft)
+        val configured = requireNotNull(form.toSettings())
+        settings.save(configured)
+
+        val restored = store().current
+        assertEquals(configured.memoryEmbedding, restored.memoryEmbedding)
+        assertTrue(restored.memoryEmbedding.active)
+        assertEquals(key, restored.chat.apiKey)
+        assertTrue(embeddingKey in restored.secrets)
+        assertFalse(embeddingKey in restored.toString())
+        assertFalse(embeddingKey in form.toString())
+        val plain = context.getSharedPreferences("plain-test", Context.MODE_PRIVATE)
+        val secret = context.getSharedPreferences("secret-test", Context.MODE_PRIVATE)
+        assertFalse(embeddingKey in plain.all.values)
+        assertFalse(plain.contains("memoryEmbedding.baseUrl"))
+        assertEquals(embeddingKey, secret.getString("memoryEmbedding.apiKey", null))
+
+        settings.save(restored.copy(memoryEmbedding = restored.memoryEmbedding.copy(enabled = false)))
+        val disabled = store().current.memoryEmbedding
+        assertFalse(disabled.active)
+        assertEquals(embeddingKey, disabled.apiKey)
+        assertEquals("https://embedding.example.com/v1", disabled.baseUrl)
+    }
+
+    @Test fun `failed save cannot activate remote embeddings`() {
+        val plain = context.getSharedPreferences("embedding-failed-plain", Context.MODE_PRIVATE)
+        val disk = context.getSharedPreferences("embedding-failed-secret", Context.MODE_PRIVATE)
+        val unwritable = object : SharedPreferences by disk {
+            override fun edit(): SharedPreferences.Editor = object : SharedPreferences.Editor by disk.edit() {
+                override fun commit(): Boolean = false
+            }
+        }
+        val store = SettingsStore(plain, unwritable)
+        val enabled = store.current.copy(memoryEmbedding = MemoryEmbeddingSettings(
+            enabled = true,
+            baseUrl = "https://embedding.example/v1",
+            model = "test-embedding",
+        ))
+        assertFalse(store.save(enabled))
+        assertFalse(store.current.memoryEmbedding.active)
+        assertFalse(SettingsStore(plain, disk).current.memoryEmbedding.active)
+    }
+
+    @Test fun `memory embedding accepts optional credentials with secure or loopback URLs`() {
+        val localhostUrls = listOf(
+            "http://127.0.0.1:8080/v1",
+            "http://localhost:8080/v1",
+            "http://[::1]:8080/v1",
+        )
+        for (url in localhostUrls + "https://example.com/api/v3") {
+            val embedding = MemoryEmbeddingSettings(enabled = true, baseUrl = url, model = "test-model")
+            assertTrue(embedding.active)
+            assertEquals("$url/embeddings", embedding.requestUrl)
+        }
+        val invalidUrls = listOf(
+            "http://192.0.2.3/v1",
+            "http://localhost.example.com/v1",
+            "https://name:password@example.com/v1",
+            "https://example.com/v1?token=secret",
+            "https://example.com/v1#fragment",
+            "https://example.com/v1/embeddings",
+        )
+        for (url in invalidUrls) {
+            val embedding = MemoryEmbeddingSettings(enabled = true, baseUrl = url, model = "test-model")
+            assertFalse(embedding.active)
+            assertNull(SettingsForm(memoryEmbedding = embedding).toSettings())
+            assertFalse(requireNotNull(SettingsForm(memoryEmbedding = embedding.copy(enabled = false)).toSettings())
+                .memoryEmbedding.active)
+        }
+    }
+
+    @Test fun `primary role retains legacy birthdays and round trips new profile fields`() {
+        val prefs = context.getSharedPreferences("plain-test", Context.MODE_PRIVATE)
+        prefs.edit().putInt("persona.birthdayYear", 2000).putInt("persona.birthdayMonth", 2).commit()
+        val settings = store()
+        val previous = settings.current
+        assertNull(previous.persona.birthdayDay)
+        assertEquals(28, previous.persona.ageAt(LocalDate.of(2028, 2, 28)))
+
+        val updated = previous.persona.copy(
+            birthdayDay = 29, hometown = "苏州", education = "本科", relationshipStatus = "有伴侣",
+            appearance = "短发", personality = "爱观察", speechStyle = "直爽", lifestyle = "爱阅读", background = "修过旧书",
+        )
+        settings.save(previous.copy(persona = updated))
+        assertEquals(updated, store().current.persona)
     }
 }

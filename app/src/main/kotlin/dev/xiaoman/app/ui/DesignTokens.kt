@@ -184,7 +184,7 @@ object SizeTokens {
     val avatarHeader = 28.dp
     val avatarFeed = 26.dp
     val avatarEntry = 40.dp
-    val navHeight = 62.dp
+    val navHeight = 54.dp
     /** 所有可点元素的最小热区，视觉图标仍按 IconSize 取 18–20dp。 */
     val touchTarget = 44.dp
     /** 气泡最多占内容宽度的 80%，给对侧和留白留出呼吸。 */
@@ -217,7 +217,7 @@ object IconSize {
     val sm = 16.dp
     val md = 18.dp
     val lg = 20.dp
-    /** 底栏侧项图标。 */
-    val nav = 22.dp
+    /** 底栏图标。 */
+    val nav = 24.dp
     val xl = 24.dp
 }

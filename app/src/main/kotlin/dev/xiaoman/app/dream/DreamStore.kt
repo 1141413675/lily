@@ -7,6 +7,10 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -28,6 +32,7 @@ import java.util.concurrent.TimeUnit
 class DreamStore(
     private val root: File,
     private val clock: () -> Long = System::currentTimeMillis,
+    private val defaultConfig: DreamConfig = DreamConfig(),
 ) {
     private val daysDir = File(root, DAYS)
     private val logDir = File(root, LOGS)
@@ -40,11 +45,12 @@ class DreamStore(
         encodeDefaults = true
         prettyPrint = true
     }
+    private val logJson = Json(json) { prettyPrint = false }
 
     fun today(): String = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
 
     @Synchronized
-    fun config(): DreamConfig = readJson(configFile, DreamConfig()) ?: DreamConfig()
+    fun config(): DreamConfig = readJson(configFile, defaultConfig) ?: defaultConfig
 
     @Synchronized
     fun saveConfig(config: DreamConfig) {
@@ -68,7 +74,7 @@ class DreamStore(
     fun record(role: String, text: String) {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return
-        val line = json.encodeToString(LogLine(clock(), role, trimmed.take(MAX_LOG_CHARS)))
+        val line = logJson.encodeToString(LogLine(clock(), role, trimmed.take(MAX_LOG_CHARS)))
         synchronized(this) {
             try {
                 val file = File(logDir, "${today()}.jsonl")
@@ -83,23 +89,23 @@ class DreamStore(
 
     /** 撤回一条原话：从当天/前一天的日志里删掉它，夜里做梦不再读到。 */
     fun forget(role: String, text: String) {
-        val trimmed = text.trim()
+        val trimmed = text.trim().take(MAX_LOG_CHARS)
         if (trimmed.isEmpty()) return
         val dates = listOf(today(), LocalDate.now().minusDays(1).format(DateTimeFormatter.ISO_LOCAL_DATE)).distinct()
         synchronized(this) {
-            dates.forEach { date ->
+            for (date in dates) {
                 val file = File(logDir, "$date.jsonl")
-                if (!file.isFile) return@forEach
-                val lines = runCatching { file.readLines() }.getOrDefault(emptyList()).toMutableList()
-                val index = lines.indexOfLast { raw ->
-                    val entry = runCatching { json.decodeFromString<LogLine>(raw) }.getOrNull()
-                    entry != null && entry.r == role && entry.x == trimmed
+                if (!file.isFile) continue
+                val records = readLog(file).toMutableList()
+                val index = records.indexOfLast { record ->
+                    record.entry?.let { it.r == role && it.x == trimmed } == true
                 }
-                if (index < 0) return@forEach
-                lines.removeAt(index)
+                if (index < 0) continue
+                records.removeAt(index)
                 runCatching {
-                    writeAtomic(file, if (lines.isEmpty()) "" else lines.joinToString("\n") + "\n")
+                    writeAtomic(file, if (records.isEmpty()) "" else records.joinToString("\n", postfix = "\n") { it.source })
                 }
+                return
             }
         }
     }
@@ -113,8 +119,8 @@ class DreamStore(
         for (date in days.distinct()) {
             val file = File(logDir, "$date.jsonl")
             if (!file.isFile) continue
-            runCatching { file.readLines() }.getOrDefault(emptyList()).forEach { raw ->
-                val entry = runCatching { json.decodeFromString<LogLine>(raw) }.getOrNull() ?: return@forEach
+            readLog(file).forEach { record ->
+                val entry = record.entry ?: return@forEach
                 if (entry.t < since) return@forEach
                 lines += entry.t to "[${time(entry.t)} ${if (entry.r == "user") "用户" else "她"}] ${entry.x}"
             }
@@ -123,20 +129,58 @@ class DreamStore(
         return if (text.length > maxChars) text.takeLast(maxChars) else text
     }
 
-    /** Moves [note] into the recycle bin and returns the absolute path of the backup file. */
+    /** Older versions appended pretty-printed objects to JSONL. Preserve even unreadable records when editing. */
+    private fun readLog(file: File): List<LogRecord> {
+        val lines = runCatching { file.readLines() }.getOrDefault(emptyList())
+        val records = mutableListOf<LogRecord>()
+        fun add(source: String) {
+            val entry = runCatching { logJson.decodeFromString<LogLine>(source) }.getOrNull()
+            records += LogRecord(source, entry)
+        }
+
+        var legacy: StringBuilder? = null
+        for (line in lines) {
+            val token = line.trim()
+            val block = legacy
+            when {
+                token.startsWith("{") -> {
+                    block?.let { add(it.toString()) }
+                    legacy = if (token == "{") StringBuilder(line) else null
+                    if (legacy == null) add(line)
+                }
+                block == null -> add(line)
+                else -> {
+                    block.append('\n').append(line)
+                    if (token == "}") {
+                        add(block.toString())
+                        legacy = null
+                    }
+                }
+            }
+        }
+        legacy?.let { add(it.toString()) }
+        return records
+    }
+
+    /** Stages a durable copy of [note] and returns its path only after both files are written. */
     @Synchronized
-    fun trash(note: Note, reason: String, date: String): String? = try {
+    fun trash(note: Note, reason: String, date: String): String? {
         val dir = File(trashDir, date).apply { mkdirs() }
         val base = note.permalink.replace('/', '_').ifBlank { "note" }
         var file = File(dir, "$base.md")
         var n = 2
-        while (file.exists()) file = File(dir, "$base-${n++}.md")
-        file.writeText(BasicMemoryFormat.render(note), Charsets.UTF_8)
-        val entry = TrashEntry(date, file.relativeTo(root).invariantSeparatorsPath, note.permalink, note.title, clock(), reason)
-        writeAtomic(File(file.path + ".json"), json.encodeToString(entry))
-        file.absolutePath
-    } catch (e: Exception) {
-        null
+        while (file.exists() || File(file.path + ".json").exists()) file = File(dir, "$base-${n++}.md")
+        val metadata = File(file.path + ".json")
+        return try {
+            writeAtomic(file, BasicMemoryFormat.render(note))
+            val entry = TrashEntry(date, file.relativeTo(root).invariantSeparatorsPath, note.permalink, note.title, clock(), reason)
+            writeAtomic(metadata, json.encodeToString(entry))
+            file.absolutePath
+        } catch (e: Exception) {
+            file.delete()
+            metadata.delete()
+            null
+        }
     }
 
     @Synchronized
@@ -207,17 +251,18 @@ class DreamStore(
     }
 
     private fun writeAtomic(file: File, text: String) {
-        val dir = file.parentFile ?: return
-        if (!dir.isDirectory && !dir.mkdirs()) return
+        val dir = file.parentFile ?: throw IOException("无法确定文件目录")
+        if (!dir.isDirectory && !dir.mkdirs()) throw IOException("无法创建文件目录")
         val temp = File.createTempFile(".${file.name}.", ".tmp", dir)
         try {
             FileOutputStream(temp).use { out ->
                 out.write(text.toByteArray(Charsets.UTF_8))
                 out.fd.sync()
             }
-            if (!temp.renameTo(file)) {
-                file.writeText(text, Charsets.UTF_8)
-                temp.delete()
+            try {
+                Files.move(temp.toPath(), file.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+            } catch (e: AtomicMoveNotSupportedException) {
+                Files.move(temp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING)
             }
         } finally {
             temp.delete()
@@ -226,6 +271,7 @@ class DreamStore(
 
     @Serializable
     private data class LogLine(val t: Long, val r: String, val x: String)
+    private data class LogRecord(val source: String, val entry: LogLine?)
 
     companion object {
         const val DAYS = "days"

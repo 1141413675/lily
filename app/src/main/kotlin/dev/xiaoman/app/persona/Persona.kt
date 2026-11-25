@@ -1,9 +1,15 @@
 package dev.xiaoman.app.persona
 
+import dev.xiaoman.app.life.LifeSettings
+import kotlinx.serialization.Serializable
+import java.time.LocalDate
+import java.time.Period
+
 /**
- * 小满是谁：昵称、性别（决定代词）、生日或年龄、音色，以及一段自由书写的人设文字。
+ * 角色的昵称、性别（决定代词）、生日或年龄、音色，以及一段自由书写的人设文字。
  * 只影响之后生成的文本，不改写历史记录。
  */
+@Serializable
 data class PersonaSettings(
     val nickname: String = DEFAULT_NICKNAME,
     val selfRef: SelfRef = SelfRef.ME,
@@ -22,11 +28,20 @@ data class PersonaSettings(
     val voiceChosen: Boolean = false,
     /** 用户自由书写的人设，整段注入；不再拆成语气/长度/距离感。 */
     val bio: String = "",
-    /** 生日只存年、月，年龄显示时实时算。 */
+    /** 旧档案可能只有年、月，仍可用来计算年龄。 */
     val birthdayYear: Int? = null,
     val birthdayMonth: Int? = null,
     /** 没填生日时的固定年龄。 */
     val fixedAge: Int? = null,
+    val birthdayDay: Int? = null,
+    val hometown: String = "",
+    val education: String = "",
+    val relationshipStatus: String = "",
+    val appearance: String = "",
+    val personality: String = "",
+    val speechStyle: String = "",
+    val lifestyle: String = "",
+    val background: String = "",
 ) {
     /** 昵称落盘前去掉空白；空值回退调用方给的名字（应用里传当前应用名）。 */
     fun nameOr(fallback: String): String = nickname.trim().ifBlank { fallback }
@@ -52,8 +67,20 @@ data class PersonaSettings(
         return listOf(tone.label, length.label, "自称$selfName").joinToString(" · ")
     }
 
-    /** 生日完整时按今天实时算年龄；否则用固定年龄。 */
-    fun ageAt(today: java.time.LocalDate = java.time.LocalDate.now()): Int? {
+    fun birthdayDate(): LocalDate? {
+        val year = birthdayYear?.takeIf { it in BIRTH_YEAR_RANGE } ?: return null
+        val month = birthdayMonth ?: return null
+        val day = birthdayDay ?: return null
+        return runCatching { LocalDate.of(year, month, day) }.getOrNull()
+    }
+
+    /** 完整生日精确到日，旧档案按原来的月份计算。 */
+    fun ageAt(today: LocalDate = LocalDate.now()): Int? {
+        if (birthdayDay != null) {
+            val date = birthdayDate()?.takeUnless { it.isAfter(today) }
+            if (date != null) return Period.between(date, today).years.takeIf { it in 0..130 }
+            return fixedAge?.takeIf { it in AGE_RANGE }
+        }
         val year = birthdayYear
         val month = birthdayMonth
         if (year != null && month != null && year in BIRTH_YEAR_RANGE && month in 1..12) {
@@ -73,10 +100,12 @@ data class PersonaSettings(
     }
 
     companion object {
-        const val DEFAULT_NICKNAME = "小满"
+        const val DEFAULT_NICKNAME = "Lily"
         val MAX_NAME = 8
         val MAX_SELF = 6
         val MAX_BIO = 4000
+        const val MAX_PROFILE_TEXT = 120
+        const val MAX_BACKGROUND = 300
         val BIRTH_YEAR_RANGE = 1900..2100
         val AGE_RANGE = 1..130
         val DEFAULT = PersonaSettings()
@@ -197,19 +226,21 @@ object PersonaPrompt {
         emoji: dev.xiaoman.app.chat.EmojiStyle = dev.xiaoman.app.chat.EmojiStyle.NATURAL,
         fallbackName: String = p.name,
         replyMode: dev.xiaoman.app.settings.ReplyMode = dev.xiaoman.app.settings.ReplyMode.AUTO,
+        life: LifeSettings = LifeSettings(),
     ): String = buildString {
         val name = p.nameOr(fallbackName)
         append("## 人格设定（用户可改，只影响之后的对话，不改写历史记录）\n")
         append("- 你的昵称：").append(name).append("。\n")
         append("- 你叫「").append(name).append("」；被问名字或自我介绍时只说这个名字，不要用其他默认名。\n")
         append("- 用户用「").append(p.pronoun).append("」指代你；提到自己时不要用「它」。\n")
+        appendProfile(p, life)
         val bio = p.bio.trim()
         if (bio.isNotEmpty()) {
             append("### 用户写定的人设（整段遵循，与默认描述冲突时以此为准；但名字仍以「").append(name).append("」为准）\n")
             append(bio).append("\n")
         } else {
             append("- 你怎么自称：").append(p.selfNameOr(fallbackName)).append("。\n")
-            append("- ").append(p.tone.rule).append("\n")
+            if (p.speechStyle.isBlank()) append("- ").append(p.tone.rule).append("\n")
             append("- ").append(p.length.rule).append("\n")
             append("- ").append(p.expression.rule).append("\n")
         }
@@ -241,6 +272,41 @@ object PersonaPrompt {
         }
     }
 
+    private fun StringBuilder.appendProfile(p: PersonaSettings, life: LifeSettings) {
+        val today = LocalDate.now()
+        val facts = buildList {
+            val age = p.ageAt(today)
+            if (age != null) add("年龄：${age} 岁")
+            val birthday = p.birthdayDate()?.takeUnless { it.isAfter(today) }
+            if (birthday != null) {
+                add("生日：$birthday")
+            } else if (age != null && p.birthdayDay == null && p.birthdayYear != null && p.birthdayMonth != null &&
+                p.birthdayYear in PersonaSettings.BIRTH_YEAR_RANGE && p.birthdayMonth in 1..12
+            ) {
+                add("出生年月：${p.birthdayYear} 年 ${p.birthdayMonth} 月")
+            }
+            profileFact("家乡", p.hometown)
+            profileFact("常驻城市", life.city)
+            profileFact("学历", p.education)
+            profileFact("宠物", life.pet)
+            profileFact("感情状态", p.relationshipStatus)
+            profileFact("外貌特征", p.appearance)
+            profileFact("性格设定", p.personality)
+            profileFact("说话语气", p.speechStyle)
+            profileFact("生活偏好", p.lifestyle)
+            profileFact("经历补充", p.background, PersonaSettings.MAX_BACKGROUND)
+        }
+        if (facts.isNotEmpty()) {
+            append("### 你的角色档案\n")
+            facts.forEach { append("- ").append(it).append("。\n") }
+        }
+    }
+
+    private fun MutableList<String>.profileFact(label: String, raw: String, maxLength: Int = PersonaSettings.MAX_PROFILE_TEXT) {
+        val value = raw.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.joinToString("；").take(maxLength)
+        if (value.isNotEmpty()) add("$label：$value")
+    }
+
     /** 默认人格文本里的「你是小满」换成当前昵称，其余安全与行为规则原样保留。 */
     fun rewrite(
         base: String,
@@ -248,10 +314,11 @@ object PersonaPrompt {
         emoji: dev.xiaoman.app.chat.EmojiStyle = dev.xiaoman.app.chat.EmojiStyle.NATURAL,
         fallbackName: String = p.name,
         replyMode: dev.xiaoman.app.settings.ReplyMode = dev.xiaoman.app.settings.ReplyMode.AUTO,
+        life: LifeSettings = LifeSettings(),
     ): String {
         val name = p.nameOr(fallbackName)
-        // 默认人设里所有写死的「小满」都换掉；改名后下一次构建 Agent 就生效，不缓存旧名。
-        val head = if (name == PersonaSettings.DEFAULT_NICKNAME) base else base.replace("小满", name)
-        return head + "\n\n" + section(p, emoji, fallbackName, replyMode)
+        // 共享核心保留上游模板名；Android 注入当前角色名。
+        val head = base.replace("小满", name)
+        return head + "\n\n" + section(p, emoji, fallbackName, replyMode, life)
     }
 }

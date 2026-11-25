@@ -51,6 +51,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import dev.xiaoman.app.R
 import dev.xiaoman.app.media.StickerStore
 import java.io.File
 
@@ -331,7 +332,7 @@ internal fun ImageViewer(path: String, onClose: () -> Unit, onSave: () -> Unit, 
     }
 }
 
-/** 把照片写进系统相册（Pictures/小满）；不需要存储权限（minSdk 30）。 */
+/** 把照片写进 Lily 的系统相册；不需要存储权限（minSdk 30）。 */
 internal fun saveToGallery(context: Context, path: String): Boolean {
     val file = File(path)
     if (!file.isFile) return false
@@ -345,7 +346,7 @@ internal fun saveToGallery(context: Context, path: String): Boolean {
         put(MediaStore.Images.Media.DISPLAY_NAME, file.name)
         put(MediaStore.Images.Media.MIME_TYPE, mime)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/小满")
+            put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/" + context.getString(R.string.app_name))
         }
     }
     val resolver = context.contentResolver

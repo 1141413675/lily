@@ -7,17 +7,21 @@ import dev.xiaoman.api.MemoryStore
 import dev.xiaoman.api.ModelRole
 import dev.xiaoman.api.Note
 import dev.xiaoman.api.Observation
-import dev.xiaoman.app.settings.SettingsStore
+import dev.xiaoman.app.settings.AppSettings
 import dev.xiaoman.llm.LlmClientFactory
 import dev.xiaoman.memory.BasicMemoryFormat
 import dev.xiaoman.memory.Permalinks
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.time.LocalDate
@@ -33,7 +37,7 @@ import java.time.LocalDate
  */
 class DreamEngine(
     private val memory: MemoryStore,
-    private val settings: SettingsStore,
+    private val settings: () -> AppSettings,
     private val llm: LlmClientFactory,
     private val store: DreamStore,
     private val rules: RuleStore,
@@ -52,6 +56,7 @@ class DreamEngine(
     /** Bumped after every change so the dream screen reloads. */
     private val _revision = MutableStateFlow(0)
     val revision: StateFlow<Int> = _revision.asStateFlow()
+    private val changes = Mutex()
 
     /** Mirrors a chat line into the local log; failures are ignored. */
     fun record(role: String, text: String) {
@@ -74,7 +79,7 @@ class DreamEngine(
             if (!config.enabled) return null
             if (config.lastDreamDate == store.today()) return null
         }
-        if (!settings.current.chat.configured) {
+        if (!settings().chat.configured) {
             _status.value = "还没接上聊天模型，做梦得先有这个。"
             return null
         }
@@ -116,43 +121,50 @@ class DreamEngine(
     /** 夜里页：这一条不对。只撤回她真正写下的内容，之后不再出现在这一页。 */
     fun rejectItem(date: String, id: String) {
         scope.launch {
-            val day = store.day(date) ?: return@launch
-            val updated = day.items.map { item ->
-                if (item.id == id && item.applied && item.undo != null) {
-                    undoItem(item).copy(selected = false)
-                } else {
-                    item
+            changes.withLock {
+                val day = store.day(date) ?: return@withLock
+                val updated = day.items.map { item ->
+                    if (item.id == id && item.applied && item.undo != null) {
+                        val undone = undoItem(item)
+                        if (undone.applied) undone else undone.copy(selected = false)
+                    } else {
+                        item
+                    }
                 }
+                saveChanges(day, day.copy(items = updated))
+                _revision.value += 1
             }
-            store.saveDay(day.copy(items = updated))
-            _revision.value += 1
         }
     }
 
     /** 撤销刚才的「这条不对」：把这一条按原样重新写回去。 */
     fun restoreItem(date: String, id: String) {
         scope.launch {
-            val day = store.day(date) ?: return@launch
-            val updated = day.items.map { item ->
-                if (item.id == id && !item.applied && !item.selected && item.undo == null && item.error == null) {
-                    applyItem(item, date, auto = false).copy(selected = true)
-                } else {
-                    item
+            changes.withLock {
+                val day = store.day(date) ?: return@withLock
+                val updated = day.items.map { item ->
+                    if (item.id == id && !item.applied && !item.selected) {
+                        val restored = applyItem(item, date, auto = false)
+                        restored.copy(selected = restored.applied)
+                    } else {
+                        item
+                    }
                 }
+                saveChanges(day, day.copy(items = updated))
+                _revision.value += 1
             }
-            store.saveDay(day.copy(items = updated))
-            _revision.value += 1
         }
     }
 
     /** Restores a note from the recycle bin (the trash entry's absolute path). */
     fun restoreTrash(path: String) {
         scope.launch {
-            store.readTrash(path)?.let { (_, note) ->
-                memory.write(note)
-                store.dropTrash(path)
+            changes.withLock {
+                store.readTrash(path)?.let { (_, note) ->
+                    if (restoreOriginal(note)) store.dropTrash(path)
+                }
+                _revision.value += 1
             }
-            _revision.value += 1
         }
     }
 
@@ -174,7 +186,7 @@ class DreamEngine(
             jsonMode = true,
         )
         _status.value = "正在整理记忆…"
-        val client = llm.create(settings.current.chat.toModelConfig(ModelRole.CHAT))
+        val client = llm.create(settings().chat.toModelConfig(ModelRole.CHAT))
         val response = try {
             client.complete(request)
         } catch (e: LlmException) {
@@ -227,7 +239,7 @@ class DreamEngine(
     }
 
     private fun systemPrompt(rejectedKeys: Set<String>, rejectedStatements: Set<String>): String = buildString {
-        append("你是").append(settings.current.persona.nameOr(appName)).append("的记忆整理器，负责「做梦」：在空闲时读最近 24 小时的对话和相关记忆，决定哪些记住、哪些合并、哪些忘掉，并归纳长期规律。\n")
+        append("你是").append(settings().persona.nameOr(appName)).append("的记忆整理器，负责「做梦」：在空闲时读最近 24 小时的对话和相关记忆，决定哪些记住、哪些合并、哪些忘掉，并归纳长期规律。\n")
         append("只输出一个 JSON 对象，不要解释、不要 Markdown。字段如下：\n")
         append("""{"summary":"当天摘要（150 字内）","remember":[{"title":"","permalink":"","observations":[{"category":"","content":"","tags":[],"context":""}],"reason":""}],""")
         append(""""merge":[{"target":"","title":"","observations":[],"sources":["被合并掉的笔记 permalink"],"reason":""}],""")
@@ -363,20 +375,22 @@ class DreamEngine(
         return items
     }
 
-    private suspend fun applyInternal(date: String, ids: Set<String>, auto: Boolean) {
-        val day = store.day(date) ?: return
+    private suspend fun applyInternal(date: String, ids: Set<String>, auto: Boolean) = changes.withLock {
+        val day = store.day(date) ?: return@withLock
         val updated = day.items.map { item ->
             if (item.id in ids && !item.applied) applyItem(item, date, auto) else item
         }
         val remaining = updated.count { !it.applied }
-        store.saveDay(
+        saveChanges(
+            day,
             day.copy(
                 items = updated,
                 status = if (remaining == 0) DreamTypes.APPLIED else DreamTypes.PROPOSED,
                 appliedAt = if (remaining == 0) clock() else day.appliedAt,
             ),
         )
-        _status.value = if (remaining == 0) "已全部落地。" else "还有 $remaining 条待确认。"
+        _status.value = updated.firstOrNull { it.id in ids && it.error != null }?.error
+            ?: if (remaining == 0) "已全部落地。" else "还有 $remaining 条待确认。"
         _revision.value += 1
     }
 
@@ -429,42 +443,106 @@ class DreamEngine(
 
     private suspend fun applyMerge(item: DreamItem, date: String, auto: Boolean): DreamItem {
         val target = normalize(item.target.ifBlank { item.permalink }) ?: error("缺少合并目标")
-        val existing = memory.read(target)
-        val created = existing == null
-        val added = mutableListOf<DreamObservation>()
-        if (created) {
-            memory.write(
-                Note(
-                    title = item.title.ifBlank { target.substringAfterLast('/') },
-                    permalink = target,
-                    observations = item.observations.map { it.toObservation() },
-                    updatedAtMillis = clock(),
-                ),
-            )
-            added += item.observations
-        } else {
-            val seen = existing!!.observations.map { normalizeText(it.content) }.toMutableSet()
-            item.observations.forEach { obs ->
-                if (seen.add(normalizeText(obs.content))) {
-                    memory.appendObservation(target, obs.toObservation())
-                    added += obs
+        if (item.undo != null) {
+            val recovered = undoItem(item)
+            if (recovered.undo != null) return recovered
+        }
+        val existing = readExact(target)
+        val sources = item.sources.mapNotNull(::normalize).distinct()
+            .filter { it != target }.mapNotNull { readExact(it) }
+        val seen = existing?.observations.orEmpty().map { normalizeText(it.content) }.toMutableSet()
+        val added = item.observations.filter { seen.add(normalizeText(it.content)) }
+        val backups = mutableListOf<Pair<Note, String>>()
+        val deleteAttempts = mutableSetOf<String>()
+        var written: Note? = null
+        try {
+            for (note in sources) {
+                val path = store.trash(note, "合并到 $target", date)
+                    ?: error("无法备份原记忆，合并已停止。")
+                backups += note to path
+            }
+            if (existing == null || added.isNotEmpty()) {
+                check(readExact(target) == existing) { "目标记忆已修改，请重试。" }
+                val note = existing ?: Note(
+                    title = item.title.ifBlank { target.substringAfterLast('/') }, permalink = target,
+                )
+                written = memory.write(
+                    note.copy(observations = note.observations + added.map { it.toObservation() }, updatedAtMillis = clock()),
+                )
+            }
+            for ((note, _) in backups) {
+                check(readExact(note.permalink) == note) { "原记忆已修改，请重试。" }
+                deleteAttempts += note.permalink
+                check(memory.delete(note.permalink)) { "无法移除原记忆，合并已停止。" }
+            }
+        } catch (failure: Exception) {
+            val needRecovery = backups.filter { (note, path) ->
+                if (note.permalink in deleteAttempts) true
+                else {
+                    store.dropTrash(path)
+                    false
                 }
             }
-        }
-        val trashFiles = mutableListOf<String>()
-        item.sources.mapNotNull(::normalize).filter { it != target }.forEach { source ->
-            val note = memory.read(source) ?: return@forEach
-            store.trash(note, "合并到 $target", date)?.let { trashFiles += it }
-            memory.delete(note.permalink)
+            val recovery = rollbackMerge(existing, written, added, needRecovery)
+            if (failure is CancellationException) throw failure
+            val message = failure.message?.takeIf { it.isNotBlank() } ?: "合并失败"
+            return item.copy(
+                permalink = target,
+                undo = recovery,
+                error = if (recovery == null) message else "$message 已保留备份，重试时先恢复原记忆。",
+            )
         }
         return item.copy(
             permalink = target,
             target = target,
             applied = true,
             auto = auto,
-            undo = DreamUndo(added = added, createdNote = created, trashFiles = trashFiles),
+            undo = DreamUndo(added = added, createdNote = existing == null, trashFiles = backups.map { it.second }),
+            error = null,
         )
     }
+
+    private suspend fun rollbackMerge(
+        previous: Note?,
+        written: Note?,
+        added: List<DreamObservation>,
+        backups: List<Pair<Note, String>>,
+    ): DreamUndo? = withContext(NonCancellable) {
+        val retained = backups.mapNotNull { (note, path) ->
+            if (runCatching { restoreOriginal(note) }.getOrDefault(false)) {
+                store.dropTrash(path)
+                null
+            } else {
+                path
+            }
+        }
+        val targetPending = written != null && runCatching {
+            val current = readExact(written.permalink)
+            if (current != null) {
+                check(sameContent(current, written))
+                if (previous == null) check(memory.delete(written.permalink))
+                else memory.write(previous)
+            }
+        }.isFailure
+        if (retained.isEmpty() && !targetPending) null else DreamUndo(
+            added = if (targetPending) added else emptyList(),
+            createdNote = targetPending && previous == null,
+            trashFiles = retained,
+        )
+    }
+
+    private suspend fun readExact(permalink: String): Note? =
+        memory.read(permalink)?.takeIf { it.permalink == permalink }
+
+    private suspend fun restoreOriginal(note: Note): Boolean {
+        val existing = readExact(note.permalink)
+        if (existing != null) return sameContent(existing, note)
+        memory.write(note)
+        return true
+    }
+
+    private fun sameContent(first: Note, second: Note): Boolean =
+        first.copy(updatedAtMillis = 0) == second.copy(updatedAtMillis = 0)
 
     private suspend fun applyForget(item: DreamItem, date: String): DreamItem {
         val permalink = normalize(item.permalink.ifBlank { item.title }) ?: error("缺少笔记路径")
@@ -508,40 +586,56 @@ class DreamEngine(
         return item.copy(permalink = "${RuleStore.FOLDER}/${Permalinks.fromTitle(rule.key)}", applied = true)
     }
 
-    private suspend fun undoAutoInternal(date: String) {
-        val day = store.day(date) ?: return
-        val updated = day.items.map { item ->
+    private suspend fun undoAutoInternal(date: String) = changes.withLock {
+        val day = store.day(date) ?: return@withLock
+        val updated = day.items.asReversed().map { item ->
             if (item.auto && item.applied) undoItem(item) else item
-        }
+        }.asReversed()
         val remaining = updated.count { !it.applied }
-        store.saveDay(
+        saveChanges(
+            day,
             day.copy(
                 items = updated,
                 status = if (remaining == 0) DreamTypes.APPLIED else DreamTypes.PROPOSED,
             ),
         )
-        _status.value = "已撤回自动变更。"
+        _status.value = updated.firstOrNull { it.auto && it.applied && it.error != null }?.error ?: "已撤回自动变更。"
         _revision.value += 1
     }
 
     private suspend fun undoItem(item: DreamItem): DreamItem {
         val undo = item.undo ?: return item
-        val permalink = item.permalink.ifBlank { item.target }
-        if (permalink.isNotBlank()) {
-            val note = memory.read(permalink)
-            if (note != null) {
-                val body = removeObservationLines(note.body, undo.added.map { it.content })
-                val kept = note.observations.filterNot { observationMatches(it, undo.added.map { it.content }) }
-                val createdOnly = undo.createdNote && kept.isEmpty() && body.lineSequence().none { it.trim().startsWith("- [") }
-                if (createdOnly) memory.delete(note.permalink)
-                else memory.write(note.copy(body = body, observations = kept, updatedAtMillis = clock()))
+        return try {
+            val originals = undo.trashFiles.map { path -> store.readTrash(path)?.second ?: error("原记忆备份无法读取。") }
+            for (note in originals) {
+                check(restoreOriginal(note)) { "同名的原记忆已修改，备份仍保留。" }
             }
+            val permalink = item.permalink.ifBlank { item.target }
+            if (permalink.isNotBlank() && (undo.createdNote || undo.added.isNotEmpty())) {
+                val note = readExact(permalink)
+                if (note != null) {
+                    val contents = undo.added.map { it.content }
+                    val body = removeObservationLines(note.body, contents)
+                    val kept = note.observations.filterNot { observationMatches(it, contents) }
+                    val createdOnly = undo.createdNote && kept.isEmpty() && body.lineSequence().none { it.trim().startsWith("- [") }
+                    if (createdOnly) check(memory.delete(note.permalink)) { "无法撤回合并目标，请重试。" }
+                    else memory.write(note.copy(body = body, observations = kept, updatedAtMillis = clock()))
+                }
+            }
+            item.copy(applied = false, auto = false, undo = null, error = null)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            item.copy(error = e.message?.takeIf { it.isNotBlank() } ?: "无法撤回，请重试。")
         }
-        undo.trashFiles.forEach { path ->
-            store.readTrash(path)?.let { (_, note) -> memory.write(note) }
-            store.dropTrash(path)
-        }
-        return item.copy(applied = false, auto = false, undo = null, error = null)
+    }
+
+    /** Keep recovery copies until the updated undo state has been written. */
+    private fun saveChanges(previous: DreamDay, updated: DreamDay) {
+        store.saveDay(updated)
+        val retained = updated.items.flatMap { it.undo?.trashFiles.orEmpty() }.toSet()
+        previous.items.flatMap { it.undo?.trashFiles.orEmpty() }
+            .distinct().filterNot { it in retained }.forEach(store::dropTrash)
     }
 
     private fun removeObservationLines(body: String, contents: List<String>): String {

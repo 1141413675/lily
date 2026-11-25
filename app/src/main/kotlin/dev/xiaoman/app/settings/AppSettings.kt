@@ -3,6 +3,8 @@ package dev.xiaoman.app.settings
 import dev.xiaoman.api.AgentConfig
 import dev.xiaoman.api.ModelConfig
 import dev.xiaoman.api.ModelRole
+import kotlinx.serialization.Serializable
+import java.net.URI
 
 /** One OpenAI-compatible endpoint as typed into Settings. [toString] never shows [apiKey]. */
 data class ModelSettings(
@@ -27,6 +29,49 @@ data class ModelSettings(
     companion object {
         /** Volcano Ark. */
         const val DEFAULT_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
+    }
+}
+
+/** The separate OpenAI-compatible endpoint for semantic memory search. */
+data class MemoryEmbeddingSettings(
+    val enabled: Boolean = false,
+    val baseUrl: String = "",
+    val model: String = "",
+    val apiKey: String = "",
+) {
+    val requestUrl: String?
+        get() {
+            val base = baseUrl.trim().trimEnd('/')
+            if (base.isEmpty() || base.length > MAX_BASE_URL) return null
+            val uri = runCatching { URI(base) }.getOrNull() ?: return null
+            val host = uri.host?.removeSurrounding("[", "]")?.lowercase() ?: return null
+            val protocol = uri.scheme?.lowercase() ?: return null
+            if (protocol != "https" && !(protocol == "http" && host in LOOPBACK_HOSTS)) return null
+            if (uri.rawUserInfo != null || uri.rawQuery != null || uri.rawFragment != null) return null
+            if (uri.port != -1 && uri.port !in 1..65535) return null
+            if (uri.rawPath.trimEnd('/').endsWith("/embeddings", ignoreCase = true)) return null
+            return "${uri.toASCIIString()}/embeddings"
+        }
+
+    val modelValid: Boolean get() = model.isNotBlank() && model.length <= MAX_MODEL && model.none(Char::isISOControl)
+    val keyValid: Boolean get() = apiKey.length <= MAX_API_KEY && apiKey.all { it in '!'..'~' }
+    val configured: Boolean get() = requestUrl != null && modelValid && keyValid
+    val active: Boolean get() = enabled && configured
+
+    internal fun normalized(): MemoryEmbeddingSettings = copy(
+        baseUrl = baseUrl.trim().trimEnd('/'),
+        model = model.trim(),
+        apiKey = apiKey.trim(),
+    )
+
+    // Form values can contain secrets pasted into the wrong field before validation.
+    override fun toString(): String = "MemoryEmbeddingSettings(enabled=$enabled, configured=$configured)"
+
+    companion object {
+        const val MAX_BASE_URL = 2048
+        const val MAX_MODEL = 256
+        const val MAX_API_KEY = 4096
+        private val LOOPBACK_HOSTS = setOf("127.0.0.1", "localhost", "::1")
     }
 }
 
@@ -97,6 +142,7 @@ data class ImageSettings(
  * 主动性设置。关系档案本身在 Markdown 记忆里，这里只放频率、免打扰与降级开关。
  * [neutralTone] 是降级档：关闭主动、去掉亲昵语气、把间隔拉长。
  */
+@Serializable
 data class RelationSettings(
     val proactive: Boolean = true,
     /** 每天最多主动开口几次。 */
@@ -156,6 +202,7 @@ data class AppSettings(
     val personaVoiceNotice: Boolean = false,
     val maxSteps: Int = AgentConfig().maxSteps,
     val learnFromSuccess: Boolean = AgentConfig().learnFromSuccess,
+    val memoryEmbedding: MemoryEmbeddingSettings = MemoryEmbeddingSettings(),
 ) {
     val configured: Boolean get() = chat.configured && operator.configured
 
@@ -165,7 +212,8 @@ data class AppSettings(
 
     /** Values to mask in traces and logs. */
     val secrets: List<String>
-        get() = listOf(chat.apiKey, operator.apiKey, asr.apiKey, tts.apiKey, realtime.apiKey).filter { it.isNotBlank() }
+        get() = listOf(chat.apiKey, operator.apiKey, asr.apiKey, tts.apiKey, realtime.apiKey, memoryEmbedding.apiKey)
+            .filter { it.isNotBlank() }
 
     fun agentConfig() = AgentConfig(maxSteps = maxSteps, learnFromSuccess = learnFromSuccess)
 
@@ -201,6 +249,7 @@ data class SettingsForm(
     val personaVoiceNotice: Boolean = false,
     val maxSteps: String = AgentConfig().maxSteps.toString(),
     val learnFromSuccess: Boolean = true,
+    val memoryEmbedding: MemoryEmbeddingSettings = MemoryEmbeddingSettings(),
 ) {
     data class ModelForm(
         val baseUrl: String = ModelSettings.DEFAULT_BASE_URL,
@@ -244,6 +293,8 @@ data class SettingsForm(
     /** Null while a field is invalid. */
     fun toSettings(): AppSettings? {
         val steps = maxSteps.trim().toIntOrNull()?.takeIf { it in AppSettings.MAX_STEPS_RANGE } ?: return null
+        val embedding = memoryEmbedding.normalized()
+        if (embedding.enabled && !embedding.configured) return null
         return AppSettings(
             chat = chat.toSettings() ?: return null,
             operator = operator.toSettings() ?: return null,
@@ -263,6 +314,7 @@ data class SettingsForm(
             personaVoiceNotice = personaVoiceNotice,
             maxSteps = steps,
             learnFromSuccess = learnFromSuccess,
+            memoryEmbedding = embedding,
         )
     }
 
@@ -286,6 +338,7 @@ data class SettingsForm(
             personaVoiceNotice = s.personaVoiceNotice,
             maxSteps = s.maxSteps.toString(),
             learnFromSuccess = s.learnFromSuccess,
+            memoryEmbedding = s.memoryEmbedding,
         )
 
         fun parseTemperature(text: String): Double? = text.trim().toDoubleOrNull()?.takeIf { it in 0.0..2.0 }

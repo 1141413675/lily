@@ -11,8 +11,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * Persists [AppSettings]: everything but the API keys in [plain], the keys only in [secret]
- * (EncryptedSharedPreferences in the app). Nothing here logs a key.
+ * Persists [AppSettings] in [plain] and API keys in [secret] (EncryptedSharedPreferences in the app).
+ * The embedding provider and its key are saved together in the encrypted preferences.
  */
 class SettingsStore(private val plain: SharedPreferences, internal val secret: SharedPreferences) {
 
@@ -22,11 +22,13 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
     val current: AppSettings get() = _settings.value
 
     @Synchronized
-    fun save(settings: AppSettings) {
+    fun save(settings: AppSettings): Boolean {
+        val previous = current
         val unified = settings.persona.voice.trim()
         // 音色统一：朗读一定用统一音色；实时通道认不出克隆 uri / 供应商音色时保留它原来的音色，
         // 不静默写坏实时通话（见 VoiceRouting）。留空表示「没选」，朗读按性别取默认。
         val stored = settings.copy(
+            memoryEmbedding = settings.memoryEmbedding.normalized(),
             tts = settings.tts.copy(voice = unified),
             realtime = settings.realtime.copy(
                 voice = if (unified.isNotEmpty() && dev.xiaoman.app.voice.VoiceRouting.realtimeSupports(settings.realtime.baseUrl, unified)) {
@@ -63,14 +65,24 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
             putInt(MAX_STEPS, stored.maxSteps)
             putBoolean(LEARN, stored.learnFromSuccess)
         }
-        secret.edit(commit = true) {
+        val saved = secret.edit().apply {
             putString(CHAT + API_KEY, stored.chat.apiKey)
             putString(OPERATOR + API_KEY, stored.operator.apiKey)
             putString(ASR + API_KEY, stored.asr.apiKey)
             putString(TTS + API_KEY, stored.tts.apiKey)
             putString(REALTIME + API_KEY, stored.realtime.apiKey)
+            putBoolean(MEMORY_EMBEDDING_ENABLED, stored.memoryEmbedding.enabled)
+            putString(MEMORY_EMBEDDING + BASE_URL, stored.memoryEmbedding.baseUrl)
+            putString(MEMORY_EMBEDDING + MODEL, stored.memoryEmbedding.model)
+            putString(MEMORY_EMBEDDING + API_KEY, stored.memoryEmbedding.apiKey)
+        }.commit()
+        // A failed opt-in must never activate network requests in the running process.
+        _settings.value = if (!saved && previous.memoryEmbedding != stored.memoryEmbedding) {
+            stored.copy(memoryEmbedding = previous.memoryEmbedding.copy(enabled = false))
+        } else {
+            stored
         }
-        _settings.value = stored
+        return saved
     }
 
     private fun load(): AppSettings {
@@ -115,6 +127,12 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
             tts = voice(TTS, defaults.tts).copy(voice = unified),
             realtime = rawRealtime.copy(voice = safeRealtime),
             realtimeEnabled = plain.getBoolean(REALTIME_ENABLED, defaults.realtimeEnabled),
+            memoryEmbedding = MemoryEmbeddingSettings(
+                enabled = secret.getBoolean(MEMORY_EMBEDDING_ENABLED, false),
+                baseUrl = secret.getString(MEMORY_EMBEDDING + BASE_URL, null).orEmpty(),
+                model = secret.getString(MEMORY_EMBEDDING + MODEL, null).orEmpty(),
+                apiKey = secret.getString(MEMORY_EMBEDDING + API_KEY, null).orEmpty(),
+            ),
             replyMode = replyMode,
             replyModeChosen = replyChosenStored,
             replyModeNotice = plain.getBoolean(REPLY_MODE_NOTICE, false) || replyLegacy,
@@ -174,6 +192,15 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
             birthdayYear = plain.getInt(PERSONA_BIRTH_YEAR, 0).takeIf { it > 0 },
             birthdayMonth = plain.getInt(PERSONA_BIRTH_MONTH, 0).takeIf { it in 1..12 },
             fixedAge = plain.getInt(PERSONA_AGE, 0).takeIf { it > 0 },
+            birthdayDay = plain.getInt(PERSONA_BIRTH_DAY, 0).takeIf { it in 1..31 },
+            hometown = plain.getString(PERSONA_HOMETOWN, null).orEmpty(),
+            education = plain.getString(PERSONA_EDUCATION, null).orEmpty(),
+            relationshipStatus = plain.getString(PERSONA_RELATIONSHIP, null).orEmpty(),
+            appearance = plain.getString(PERSONA_APPEARANCE, null).orEmpty(),
+            personality = plain.getString(PERSONA_PERSONALITY, null).orEmpty(),
+            speechStyle = plain.getString(PERSONA_SPEECH_STYLE, null).orEmpty(),
+            lifestyle = plain.getString(PERSONA_LIFESTYLE, null).orEmpty(),
+            background = plain.getString(PERSONA_BACKGROUND, null).orEmpty(),
         )
         // 首次升级：把旧的自称/语气/长度/距离感合成一段人设文字，用户不会丢任何设定。
         // 用户主动清空过（键存在且为空）就尊重空值，不再自动回填。
@@ -199,6 +226,15 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
         putInt(PERSONA_BIRTH_YEAR, p.birthdayYear ?: 0)
         putInt(PERSONA_BIRTH_MONTH, p.birthdayMonth ?: 0)
         putInt(PERSONA_AGE, p.fixedAge ?: 0)
+        putInt(PERSONA_BIRTH_DAY, p.birthdayDay ?: 0)
+        putString(PERSONA_HOMETOWN, p.hometown)
+        putString(PERSONA_EDUCATION, p.education)
+        putString(PERSONA_RELATIONSHIP, p.relationshipStatus)
+        putString(PERSONA_APPEARANCE, p.appearance)
+        putString(PERSONA_PERSONALITY, p.personality)
+        putString(PERSONA_SPEECH_STYLE, p.speechStyle)
+        putString(PERSONA_LIFESTYLE, p.lifestyle)
+        putString(PERSONA_BACKGROUND, p.background)
     }
 
     private fun life() = dev.xiaoman.app.life.LifeSettings(
@@ -286,6 +322,8 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
         private const val TTS = "tts."
         private const val REALTIME = "realtime."
         private const val REALTIME_ENABLED = "realtime.enabled"
+        private const val MEMORY_EMBEDDING = "memoryEmbedding."
+        private const val MEMORY_EMBEDDING_ENABLED = "memoryEmbedding.enabled"
         private const val BASE_URL = "baseUrl"
         private const val MODEL = "model"
         private const val API_KEY = "apiKey"
@@ -315,6 +353,15 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
         private const val PERSONA_BIRTH_YEAR = "persona.birthdayYear"
         private const val PERSONA_BIRTH_MONTH = "persona.birthdayMonth"
         private const val PERSONA_AGE = "persona.age"
+        private const val PERSONA_BIRTH_DAY = "persona.birthdayDay"
+        private const val PERSONA_HOMETOWN = "persona.hometown"
+        private const val PERSONA_EDUCATION = "persona.education"
+        private const val PERSONA_RELATIONSHIP = "persona.relationshipStatus"
+        private const val PERSONA_APPEARANCE = "persona.appearance"
+        private const val PERSONA_PERSONALITY = "persona.personality"
+        private const val PERSONA_SPEECH_STYLE = "persona.speechStyle"
+        private const val PERSONA_LIFESTYLE = "persona.lifestyle"
+        private const val PERSONA_BACKGROUND = "persona.background"
         private const val PERSONA_VOICE_NOTICE = "persona.voiceNotice"
         private const val LIFE_CITY = "life.city"
         private const val LIFE_DOING = "life.doing"

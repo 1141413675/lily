@@ -2,12 +2,13 @@ package dev.xiaoman.app.voice
 
 import android.content.Context
 import dev.xiaoman.app.settings.ReplyMode
-import dev.xiaoman.app.settings.SettingsStore
+import dev.xiaoman.app.settings.AppSettings
 import dev.xiaoman.app.session.AgentSession
 import dev.xiaoman.app.session.ChatItem
 import dev.xiaoman.app.session.ReplyPresentation
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -32,12 +33,13 @@ sealed interface VoiceSend {
 class VoiceMessages(
     context: Context,
     private val session: AgentSession,
-    private val settings: SettingsStore,
+    private val settings: () -> AppSettings,
     private val scope: CoroutineScope,
     private val call: () -> CallController,
     private val openCall: () -> Unit,
+    audioDir: File = File(context.filesDir, "audio"),
 ) {
-    val audio = AudioStore(File(context.filesDir, "audio"))
+    val audio = AudioStore(audioDir)
     val player = AudioPlayer()
     private val recorder = Recorder(context)
     private val api = VoiceApi()
@@ -50,7 +52,7 @@ class VoiceMessages(
     /** Pressed the mic: start capturing; the recording stays local until it is transcribed. */
     fun startRecording() {
         if (_send.value == VoiceSend.Recording) return
-        if (!settings.current.asr.configured) {
+        if (!settings().asr.configured) {
             _send.value = VoiceSend.Failed("还没有配置语音识别，去设置里填 Base URL、模型和 API Key。")
             return
         }
@@ -74,7 +76,7 @@ class VoiceMessages(
         scope.launch {
             val duration = AudioStore.durationMs(recording)
             val text = try {
-                api.transcribe(settings.current.asr, recording)
+                api.transcribe(settings().asr, recording)
             } catch (e: CancellationException) {
                 recording.delete()
                 throw e
@@ -124,16 +126,13 @@ class VoiceMessages(
         // 出口检查兜底：系统提示/技能说明残留不朗读、不显示。
         val clean = dev.xiaoman.app.session.ReplyGuard.sanitize(parsedFirst)
         val song = parseSongReply(clean)
-        val mode = settings.current.replyMode
+        val mode = settings().replyMode
         // 整条都在括号里、或剔除旁白后只剩标点：不发语音，退回文字气泡。
         val speakable = TtsScript.readable(song?.lyrics ?: clean)
         if (song != null) return when (mode) {
             ReplyMode.TEXT -> ChatItem.Assistant(id, song.lyrics)
             ReplyMode.CALL -> {
-                if (speakable) {
-                    openCall()
-                    call().playReply(song.lyrics)
-                }
+                if (speakable) offerIncomingReply(song.lyrics)
                 ChatItem.Assistant(id, song.lyrics)
             }
             ReplyMode.AUTO, ReplyMode.VOICE ->
@@ -151,12 +150,15 @@ class VoiceMessages(
             ReplyMode.TEXT -> null
             ReplyMode.VOICE -> if (speakable) voiceReply(clean, id) else null
             ReplyMode.CALL -> {
-                if (speakable) {
-                    openCall()
-                    call().playReply(clean)
-                }
+                if (speakable) offerIncomingReply(clean)
                 ChatItem.Assistant(id, clean)
             }
+        }
+    }
+
+    private fun offerIncomingReply(text: String) {
+        scope.launch(Dispatchers.Main.immediate) {
+            if (call().ringIncoming(text)) openCall()
         }
     }
 
@@ -183,7 +185,7 @@ class VoiceMessages(
             "给你唱两句 · TTS 清唱\n${it.lyrics}\n语音合成失败，先给你看歌词。"
         } ?: text)
         scope.launch {
-            val current = settings.current
+            val current = settings()
             val tts = current.tts.copy(voice = current.speechVoice)
             if (!tts.configured) {
                 session.replace(id, fallback())

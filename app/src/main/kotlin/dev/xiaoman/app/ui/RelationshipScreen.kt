@@ -1,6 +1,9 @@
 package dev.xiaoman.app.ui
 
+import android.widget.Toast
+
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,6 +31,7 @@ import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,7 +39,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -52,59 +58,76 @@ import dev.xiaoman.app.relationship.ProactiveDecision
 import dev.xiaoman.app.relationship.Relationship
 import dev.xiaoman.app.relationship.RelationshipTiers
 import dev.xiaoman.app.settings.RelationSettings
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-class RelationshipViewModel(private val graph: AppGraph) : ViewModel() {
+private class RelationshipViewModel(private val conversation: AppGraph.Conversation) : ViewModel() {
+    private val store = conversation.relationship
+    val saveFailed = MutableStateFlow(false)
+
     init {
-        viewModelScope.launch { runCatching { graph.relationship.load() } }
+        viewModelScope.launch { runCatching { store.load() } }
     }
 
-    fun setAddress(text: String) = viewModelScope.launch { runCatching { graph.relationship.setAddress(text) } }
+    fun setAddress(text: String) = viewModelScope.launch { runCatching { store.setAddress(text) } }
 
-    fun addMoment(text: String) = viewModelScope.launch { runCatching { graph.relationship.addMoment(text) } }
+    fun addMoment(text: String) = viewModelScope.launch { runCatching { store.addMoment(text) } }
 
-    fun removeMoment(text: String) = viewModelScope.launch { runCatching { graph.relationship.removeMoment(text) } }
+    fun removeMoment(text: String) = viewModelScope.launch { runCatching { store.removeMoment(text) } }
 
-    fun addTopic(text: String) = viewModelScope.launch { runCatching { graph.relationship.addTopic(text) } }
+    fun addTopic(text: String) = viewModelScope.launch { runCatching { store.addTopic(text) } }
 
-    fun removeTopic(topic: OpenTopic) = viewModelScope.launch { runCatching { graph.relationship.removeTopic(topic) } }
+    fun removeTopic(topic: OpenTopic) = viewModelScope.launch { runCatching { store.removeTopic(topic) } }
 
-    fun addHabit(name: String) = viewModelScope.launch { runCatching { graph.relationship.addHabit(name) } }
+    fun addHabit(name: String) = viewModelScope.launch { runCatching { store.addHabit(name) } }
 
-    fun checkIn(name: String) = viewModelScope.launch { runCatching { graph.relationship.checkIn(name) } }
+    fun checkIn(name: String) = viewModelScope.launch { runCatching { store.checkIn(name) } }
 
-    fun removeHabit(name: String) = viewModelScope.launch { runCatching { graph.relationship.removeHabit(name) } }
+    fun removeHabit(name: String) = viewModelScope.launch { runCatching { store.removeHabit(name) } }
 
-    fun upgrade() = viewModelScope.launch { runCatching { graph.relationship.upgrade() } }
+    fun upgrade() = viewModelScope.launch { runCatching { store.upgrade() } }
 
-    fun rollback() = viewModelScope.launch { runCatching { graph.relationship.rollback() } }
+    fun rollback() = viewModelScope.launch { runCatching { store.rollback() } }
 
     fun saveRelation(relation: RelationSettings) {
-        graph.settings.save(graph.settings.current.copy(relation = relation))
-        graph.proactiveScheduler.schedule()
+        saveFailed.value = !conversation.saveRelation(relation)
     }
 
-    fun checkNow() = graph.proactive.check()
+    fun checkNow() = conversation.proactive.check()
 }
 
 @Composable
-fun RelationshipScreen(graph: AppGraph, onBack: () -> Unit, showBack: Boolean = true) {
-    val vm = viewModel { RelationshipViewModel(graph) }
-    val relationship by graph.relationship.state.collectAsStateWithLifecycle()
-    val settings by graph.settings.settings.collectAsStateWithLifecycle()
+internal fun RelationshipScreen(conversation: AppGraph.Conversation, onBack: () -> Unit, showBack: Boolean = true) {
+    val vm = viewModel(key = "relationship-${conversation.id}") { RelationshipViewModel(conversation) }
+    val relationship by conversation.relationship.state.collectAsStateWithLifecycle()
+    val settings by conversation.effectiveSettings.collectAsStateWithLifecycle()
+    val saveFailed by vm.saveFailed.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    LaunchedEffect(saveFailed) {
+        if (saveFailed) {
+            Toast.makeText(context, "保存失败，请重试", Toast.LENGTH_SHORT).show()
+            vm.saveFailed.value = false
+        }
+    }
     if (showBack) BackHandler(onBack = onBack)
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(start = Space.xs, top = Space.xs, end = Space.lg), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = Space.xs, end = Space.page, top = Space.xs, bottom = Space.sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             if (showBack) {
                 IconButton(onClick = onBack) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
                 }
             }
-            Column(Modifier.padding(start = if (showBack) 0.dp else Space.xl)) {
+            Column(
+                Modifier.weight(1f).padding(start = if (showBack) Space.sm else Space.xl),
+                verticalArrangement = Arrangement.spacedBy(Space.xs),
+            ) {
                 Text(
                     if (showBack) stringResource(R.string.relation_title) else settings.persona.pronoun,
                     style = MaterialTheme.typography.titleLarge,
@@ -112,13 +135,14 @@ fun RelationshipScreen(graph: AppGraph, onBack: () -> Unit, showBack: Boolean = 
                 Text(
                     stringResource(R.string.us_subtitle, settings.persona.nameOr(stringResource(R.string.app_name)), settings.persona.pronoun),
                     style = MaterialTheme.typography.bodySmall,
-                    color = LocalXiaomanPalette.current.ink3,
+                    color = LocalXiaomanPalette.current.ink2,
                 )
             }
         }
         Column(
-            Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Space.page, vertical = Space.sm),
-            verticalArrangement = Arrangement.spacedBy(Space.block),
+            Modifier.weight(1f).verticalScroll(rememberScrollState())
+                .padding(start = Space.page, end = Space.page, top = Space.sm, bottom = Space.block),
+            verticalArrangement = Arrangement.spacedBy(Space.xl),
         ) {
             ProfileCard(relationship, vm)
             SharedCard(relationship, vm)
@@ -137,7 +161,15 @@ private fun ProfileCard(relationship: Relationship, vm: RelationshipViewModel) {
     val days = relationship.daysKnown(today)
     val next = relationship.tier + 1
     val canUpgrade = RelationshipTiers.canUpgradeTo(relationship.tier, next, relationship.interactions, days)
-    SectionCard(stringResource(R.string.relation_profile)) {
+    SectionCard(stringResource(R.string.relation_profile), emphasized = true) {
+        Row(
+            Modifier.fillMaxWidth().padding(vertical = Space.sm),
+            horizontalArrangement = Arrangement.spacedBy(Space.sm),
+        ) {
+            Stat(days.toString(), "天", Modifier.weight(1f))
+            Stat(relationship.interactions.toString(), "次说话", Modifier.weight(1f))
+            Stat(RelationshipTiers.name(relationship.tier), "现在", Modifier.weight(1f))
+        }
         OutlinedTextField(
             value = draft,
             onValueChange = { draft = it },
@@ -145,12 +177,11 @@ private fun ProfileCard(relationship: Relationship, vm: RelationshipViewModel) {
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
-        TextButton(onClick = { vm.setAddress(draft) }, modifier = Modifier.tapTarget()) { Text(stringResource(R.string.relation_save)) }
-        // 三列数字，像个人主页的数据区。
-        Row(Modifier.fillMaxWidth().padding(vertical = Space.sm)) {
-            Stat(days.toString(), "天", Modifier.weight(1f))
-            Stat(relationship.interactions.toString(), "次说话", Modifier.weight(1f))
-            Stat(RelationshipTiers.name(relationship.tier), "现在", Modifier.weight(1f))
+        TextButton(
+            onClick = { vm.setAddress(draft) },
+            modifier = Modifier.align(Alignment.End).tapTarget(),
+        ) {
+            Text(stringResource(R.string.relation_save))
         }
         if (relationship.mood.isNotBlank()) {
             Row(
@@ -207,8 +238,13 @@ private fun ProfileCard(relationship: Relationship, vm: RelationshipViewModel) {
 @Composable
 private fun Stat(value: String, label: String, modifier: Modifier = Modifier) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(value, style = MaterialTheme.typography.titleMedium)
-        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall,
+            color = LocalXiaomanPalette.current.ink2,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 
@@ -428,14 +464,21 @@ private fun BoundaryCard(relationship: Relationship, config: RelationSettings, v
 }
 
 @Composable
-private fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-        Text(
-            title,
-            style = MaterialTheme.typography.labelMedium,
-            color = LocalXiaomanPalette.current.ink2,
-        )
-        content()
+private fun SectionCard(title: String, emphasized: Boolean = false, content: @Composable ColumnScope.() -> Unit) {
+    val palette = LocalXiaomanPalette.current
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(Radius.lg),
+        color = if (emphasized) palette.accentSoft else palette.surface,
+        border = BorderStroke(1.dp, palette.line2),
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(Space.xl),
+            verticalArrangement = Arrangement.spacedBy(Space.sm),
+        ) {
+            Text(title, style = MaterialTheme.typography.titleSmall, color = palette.ink)
+            content()
+        }
     }
 }
 

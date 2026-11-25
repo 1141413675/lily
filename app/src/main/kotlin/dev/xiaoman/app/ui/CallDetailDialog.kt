@@ -1,8 +1,6 @@
 package dev.xiaoman.app.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -11,7 +9,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -32,7 +29,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -68,14 +64,14 @@ internal fun CallDetailDialog(
             shadowElevation = Elevation.floating,
             modifier = Modifier.fillMaxWidth().padding(horizontal = Space.lg).heightIn(max = 640.dp),
         ) {
-            Column(Modifier.padding(top = Space.lg)) {
+            Column(Modifier.padding(top = Space.sm)) {
                 Row(
-                    Modifier.fillMaxWidth().padding(horizontal = Space.lg),
+                    Modifier.fillMaxWidth().padding(start = Space.page, end = Space.sm),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
                         stringResource(R.string.call_detail_title),
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleLarge,
                         color = palette.ink,
                         modifier = Modifier.weight(1f),
                     )
@@ -83,7 +79,7 @@ internal fun CallDetailDialog(
                         Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.call_detail_close), tint = palette.ink3)
                     }
                 }
-                Column(Modifier.padding(horizontal = Space.lg, vertical = Space.sm)) {
+                Column(Modifier.padding(horizontal = Space.page, vertical = Space.md)) {
                     Text(
                         when (outcome) {
                             CallOutcome.CONNECTED.name -> stringResource(R.string.call_record_connected, duration(log.durationMs / 1000))
@@ -123,15 +119,15 @@ internal fun CallDetailDialog(
                         ),
                         style = MaterialTheme.typography.bodySmall,
                         color = palette.ink3,
-                        modifier = Modifier.padding(Space.lg),
+                        modifier = Modifier.padding(horizontal = Space.page, vertical = Space.lg),
                     )
                 } else {
                     LazyColumn(
                         Modifier.weight(1f, fill = false),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                            start = Space.lg, end = Space.lg, top = Space.md, bottom = Space.md,
+                            start = Space.page, end = Space.page, top = Space.lg, bottom = Space.lg,
                         ),
-                        verticalArrangement = Arrangement.spacedBy(Space.md),
+                        verticalArrangement = Arrangement.spacedBy(Space.lg),
                     ) {
                         itemsIndexed(turns) { index, turn ->
                             val id = playbackId(log, index)
@@ -140,12 +136,12 @@ internal fun CallDetailDialog(
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
                                         if (turn.fromMe) stringResource(R.string.call_detail_me) else herName,
-                                        style = MaterialTheme.typography.labelSmall,
+                                        style = MaterialTheme.typography.labelMedium,
                                         color = if (turn.fromMe) palette.ink2 else palette.accent,
                                     )
                                     Text(
                                         " · ${time(turn.at, withDate = false)}",
-                                        style = MaterialTheme.typography.labelSmall,
+                                        style = MaterialTheme.typography.labelMedium,
                                         color = palette.ink3,
                                     )
                                     if (turn.audio != null) {
@@ -170,16 +166,15 @@ internal fun CallDetailDialog(
                                     turn.text,
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = palette.ink,
-                                    maxLines = 6,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.padding(top = 2.dp),
+                                    modifier = Modifier.padding(top = Space.xs),
                                 )
                             }
                         }
                     }
                 }
+                HorizontalDivider(color = palette.line)
                 Row(
-                    Modifier.fillMaxWidth().padding(Space.lg),
+                    Modifier.fillMaxWidth().padding(horizontal = Space.page, vertical = Space.sm),
                     horizontalArrangement = Arrangement.spacedBy(Space.sm),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {

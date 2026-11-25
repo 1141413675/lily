@@ -9,12 +9,16 @@ import dev.xiaoman.app.life.FeedTexts
 import dev.xiaoman.app.life.LifeSettings
 import dev.xiaoman.app.settings.AppSettings
 import dev.xiaoman.llm.LlmClientFactory
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -41,6 +45,7 @@ class FeedEngine(
         const val MAX_LENGTH = 80
     }
 
+    private val refreshLock = Mutex()
     private val _writing = MutableStateFlow(false)
     val writing: StateFlow<Boolean> = _writing.asStateFlow()
 
@@ -52,19 +57,33 @@ class FeedEngine(
 
     /** 可等待版本，便于单测。 */
     suspend fun refreshNow(): FeedStore.Post? {
-        val current = settings()
-        val life = current.life.trimmed()
-        if (life.isEmpty) return null
-        val now = clock()
-        if (!shouldPost(now, store.posts.value)) return null
-        _writing.value = true
+        if (!refreshLock.tryLock()) return null
         try {
+            if (store.loadFailed.value) return null
+            val current = settings()
+            val life = current.life.trimmed()
+            if (life.isEmpty) return null
+            val now = clock()
+            if (!shouldPost(now, store.posts.value)) return null
+            _writing.value = true
             val part = partAt(now)
-            val fromModel = if (current.chat.configured) runCatching { modelPost(current, life, part, now) }.getOrNull() else null
+            val fromModel = if (current.chat.configured) {
+                try {
+                    modelPost(current, life, part, now)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    null
+                }
+            } else {
+                null
+            }
+            currentCoroutineContext().ensureActive()
             val text = fromModel ?: FeedTexts.template(life, part, now)
             return store.add(text, now, if (fromModel != null) FeedStore.SOURCE_MODEL else FeedStore.SOURCE_TEMPLATE)
         } finally {
             _writing.value = false
+            refreshLock.unlock()
         }
     }
 
@@ -72,9 +91,10 @@ class FeedEngine(
         val zoned = Instant.ofEpochMilli(now).atZone(zone)
         if (zoned.hour !in MIN_HOUR..MAX_HOUR) return false
         val today = zoned.toLocalDate()
-        val todayCount = posts.count { localDate(it.at) == today }
+        val characterPosts = posts.filter { it.author == FeedStore.AUTHOR_HER }
+        val todayCount = characterPosts.count { localDate(it.at) == today }
         if (todayCount >= MAX_PER_DAY) return false
-        val last = posts.maxOfOrNull { it.at } ?: 0L
+        val last = characterPosts.maxOfOrNull { it.at } ?: 0L
         return last == 0L || now - last >= MIN_GAP_MILLIS
     }
 

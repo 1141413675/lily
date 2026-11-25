@@ -106,6 +106,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -120,15 +123,17 @@ import dev.xiaoman.app.AppGraph
 import dev.xiaoman.app.R
 import dev.xiaoman.app.feed.FeedStore
 import dev.xiaoman.app.life.FeedTexts
+import dev.xiaoman.app.session.AgentSession
 import dev.xiaoman.app.session.ChatItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileOutputStream
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.util.UUID
 
 /**
  * 动态页：两个人各自发，按时间倒序。
@@ -136,46 +141,77 @@ import java.util.UUID
  */
 class FeedViewModel(private val graph: AppGraph, private val context: Context) : ViewModel() {
 
+    enum class PublishResult { SAVED, ATTACHMENT_FAILED, STORE_FAILED }
+
     fun ensureHerPost() = graph.feed.refresh()
 
     fun extractPending() = graph.feedMemory.extractPending()
 
-    fun toggleLike(id: String) = graph.feedStore.toggleLike(id)
+    fun retryLoad(onComplete: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            onComplete(withContext(Dispatchers.IO) { graph.feedStore.retryLoad() })
+        }
+    }
 
-    fun delete(id: String) = graph.feedStore.delete(id)
+    fun toggleLike(id: String, onComplete: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            onComplete(withContext(Dispatchers.IO) { graph.feedStore.toggleLike(id) })
+        }
+    }
+
+    fun delete(id: String, onComplete: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            onComplete(withContext(Dispatchers.IO) { graph.feedStore.delete(id) })
+        }
+    }
 
     /** 图片先复制进 `feed/images`，再落动态；随后异步抽取记忆、让她来点赞回应。 */
-    fun publish(text: String, uris: List<Uri>) {
-        if (text.isBlank() && uris.isEmpty()) return
-        viewModelScope.launch(Dispatchers.IO) {
-            val saved = uris.take(FeedStore.MAX_IMAGES).mapNotNull { uri ->
-                val temp = copyToCache(uri) ?: return@mapNotNull null
-                val file = graph.feedPhotos.save(temp)
-                temp.delete()
-                file?.absolutePath
+    fun publish(text: String, uris: List<Uri>, onComplete: (PublishResult) -> Unit) {
+        viewModelScope.launch {
+            onComplete(withContext(Dispatchers.IO) { savePost(text, uris) })
+        }
+    }
+
+    private fun savePost(text: String, uris: List<Uri>): PublishResult {
+        val images = mutableListOf<String>()
+        var committed = false
+        try {
+            for (uri in uris.take(FeedStore.MAX_IMAGES)) {
+                val image = copyAttachment(uri) ?: return PublishResult.ATTACHMENT_FAILED
+                images.add(image.absolutePath)
             }
-            val post = graph.feedStore.addMine(text, saved, System.currentTimeMillis()) ?: return@launch
+            val post = graph.feedStore.addMine(text, images, System.currentTimeMillis())
+                ?: return PublishResult.STORE_FAILED
+            committed = true
             graph.feedReactions.react(post.id)
             graph.feedMemory.extract(post.id)
+            return PublishResult.SAVED
+        } finally {
+            if (!committed) images.forEach { path -> runCatching { graph.feedPhotos.delete(path) } }
         }
     }
 
     /** 评论落库；[parentId] 是回复的父评论，回复她的动态时她在聊天里接一句。 */
-    fun comment(post: FeedStore.Post, text: String, parentId: String? = null) {
-        graph.feedStore.addComment(post.id, "你", text, System.currentTimeMillis(), parentId) ?: return
-        if (post.author == FeedStore.AUTHOR_HER) {
-            graph.session.postAssistant(FeedTexts.commentReply(text, graph.feed.partAt(System.currentTimeMillis())))
+    fun comment(post: FeedStore.Post, text: String, parentId: String?, onComplete: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            val saved = withContext(Dispatchers.IO) {
+                graph.feedStore.addComment(post.id, "你", text, System.currentTimeMillis(), parentId) != null
+            }
+            onComplete(saved)
+            if (saved && post.author == FeedStore.AUTHOR_HER) {
+                graph.session.postAssistant(FeedTexts.commentReply(text, graph.feed.partAt(System.currentTimeMillis())))
+            }
         }
     }
 
     /** 确认收件人后，把动态以帖子卡片发进聊天；模型只收到对应的文字上下文。 */
-    fun shareToHer(post: FeedStore.Post, authorName: String) {
+    fun shareToHer(post: FeedStore.Post, authorName: String): AgentSession.Submit {
         val mine = post.author == FeedStore.AUTHOR_ME
         val body = post.text.trim().ifBlank {
             if (post.images.isNotEmpty()) "一组照片" else "一条动态"
         }
         val imageContext = if (post.images.isEmpty()) "" else "（动态里有 ${post.images.size} 张图片）"
-        graph.session.submit(
+        return graph.session.submit(
             "我分享了${authorName}的一条动态给你：$body$imageContext",
             display = { id ->
                 ChatItem.UserFeedShare(
@@ -194,12 +230,26 @@ class FeedViewModel(private val graph: AppGraph, private val context: Context) :
     /** 「收藏」：只落本机收藏文件，不通知她、不进记忆。 */
     fun toggleSaved(post: FeedStore.Post, herName: String) = graph.savedPosts.toggle(post, herName)
 
-    private fun copyToCache(uri: Uri): File? = runCatching {
-        val file = File(context.cacheDir, "feed-${UUID.randomUUID().toString().take(8)}.jpg")
-        val input = context.contentResolver.openInputStream(uri) ?: return null
-        input.use { source -> file.outputStream().use { source.copyTo(it) } }
-        file
-    }.getOrNull()
+    private fun copyAttachment(uri: Uri): File? {
+        val dir = graph.feedStore.imagesDir()
+        val file = runCatching {
+            if (!dir.isDirectory && !dir.mkdirs() && !dir.isDirectory) return@runCatching null
+            File.createTempFile("img-", ".jpg", dir)
+        }.getOrNull() ?: return null
+        val copied = runCatching {
+            val input = context.contentResolver.openInputStream(uri) ?: return@runCatching false
+            input.use { source ->
+                FileOutputStream(file).use { output ->
+                    val bytes = source.copyTo(output)
+                    output.fd.sync()
+                    bytes > 0
+                }
+            }
+        }.getOrDefault(false)
+        if (copied) return file
+        runCatching { graph.feedPhotos.delete(file.absolutePath) }
+        return null
+    }
 }
 
 @Composable
@@ -216,6 +266,7 @@ fun FeedScreen(
     val keyboard = LocalSoftwareKeyboardController.current
     val vm = viewModel { FeedViewModel(graph, context.applicationContext) }
     val posts by graph.feedStore.posts.collectAsStateWithLifecycle()
+    val loadFailed by graph.feedStore.loadFailed.collectAsStateWithLifecycle()
     val settings by graph.settings.settings.collectAsStateWithLifecycle()
     val profile by graph.myProfile.state.collectAsStateWithLifecycle()
     val writing by graph.feed.writing.collectAsStateWithLifecycle()
@@ -227,16 +278,23 @@ fun FeedScreen(
     var savedOpen by remember { mutableStateOf(false) }
     var viewing by remember { mutableStateOf<String?>(null) }
     var pendingDelete by remember { mutableStateOf<FeedStore.Post?>(null) }
+    var deleting by remember { mutableStateOf(false) }
+    var deleteError by remember { mutableStateOf(false) }
     var sharing by remember { mutableStateOf<FeedStore.Post?>(null) }
+    var shareError by remember { mutableStateOf<String?>(null) }
+    var feedError by remember { mutableStateOf<String?>(null) }
+    var retryingLoad by remember { mutableStateOf(false) }
     // 评论输入由页面统一管理，点输入区以外（包括另一条动态）就取消这次未发送的评论。
     var commentingPostId by remember { mutableStateOf<String?>(null) }
     var commentComposerBounds by remember { mutableStateOf<Rect?>(null) }
     var feedOriginInRoot by remember { mutableStateOf(Offset.Zero) }
     val listState = rememberLazyListState()
 
-    LaunchedEffect(Unit) {
-        vm.ensureHerPost()
-        vm.extractPending()
+    LaunchedEffect(loadFailed) {
+        if (!loadFailed) {
+            vm.ensureHerPost()
+            vm.extractPending()
+        }
     }
     // 编辑态与收藏页都铺满内容区并把底栏收起；离开页面时恢复。
     LaunchedEffect(composing, savedOpen) { onEditingChange(composing || savedOpen) }
@@ -274,7 +332,11 @@ fun FeedScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text("动态", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-                IconButton(onClick = { composing = true }, modifier = Modifier.size(SizeTokens.touchTarget)) {
+                IconButton(
+                    onClick = { composing = true },
+                    modifier = Modifier.size(SizeTokens.touchTarget),
+                    enabled = !loadFailed,
+                ) {
                     Icon(
                         Icons.Outlined.PhotoCamera,
                         contentDescription = "发布动态",
@@ -304,7 +366,21 @@ fun FeedScreen(
                     }
                 }
             }
-            if (posts.isEmpty()) {
+            feedError?.let { FeedError(it, Modifier.padding(horizontal = Space.xl, vertical = Space.sm)) }
+            if (loadFailed) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = Space.xl)) {
+                    EmptyBox {
+                        FeedError("暂时读不到动态记录。")
+                        TextButton(
+                            onClick = {
+                                retryingLoad = true
+                                vm.retryLoad { retryingLoad = false }
+                            },
+                            enabled = !retryingLoad,
+                        ) { Text(if (retryingLoad) "读取中…" else "重试") }
+                    }
+                }
+            } else if (posts.isEmpty()) {
                 Column(Modifier.fillMaxWidth().padding(horizontal = Space.xl)) {
                     EmptyBox {
                         Text(
@@ -334,9 +410,12 @@ fun FeedScreen(
                                 post = post,
                                 herName = herName,
                                 myName = myName,
-                                pronoun = settings.persona.pronoun,
                                 saved = saved.any { it.id == post.id },
-                                onLike = vm::toggleLike,
+                                onLike = { id ->
+                                    vm.toggleLike(id) { ok ->
+                                        feedError = if (ok) null else "没能保存点赞，请重试。"
+                                    }
+                                },
                                 commentsOpen = commentingPostId == post.id,
                                 onCommentsOpenChange = { open ->
                                     commentingPostId = if (open) post.id else null
@@ -347,10 +426,10 @@ fun FeedScreen(
                                     }
                                 },
                                 onComposerBounds = { commentComposerBounds = it },
-                                onComment = { text, parentId -> vm.comment(post, text, parentId) },
-                                onShare = { sharing = post },
+                                onComment = { text, parentId, complete -> vm.comment(post, text, parentId, complete) },
+                                onShare = { shareError = null; sharing = post },
                                 onToggleSave = { vm.toggleSaved(post, herName) },
-                                onDelete = { pendingDelete = post },
+                                onDelete = { deleteError = false; pendingDelete = post },
                                 onOpenMemory = onOpenMemory,
                                 onViewImage = { viewing = it },
                             )
@@ -371,10 +450,8 @@ fun FeedScreen(
         if (composing) {
             FeedEditor(
                 onCancel = { composing = false },
-                onPublish = { text, uris ->
-                    vm.publish(text, uris)
-                    composing = false
-                },
+                onPublish = vm::publish,
+                onSaved = { composing = false },
             )
         }
         if (savedOpen) {
@@ -392,11 +469,17 @@ fun FeedScreen(
                 post = post,
                 authorName = authorName,
                 herName = herName,
+                error = shareError,
                 onDismiss = { sharing = null },
                 onSend = {
-                    vm.shareToHer(post, authorName)
-                    sharing = null
-                    onOpenChat()
+                    when (vm.shareToHer(post, authorName)) {
+                        AgentSession.Submit.Busy -> shareError = "聊天正在处理上一条消息，请稍后再试。"
+                        AgentSession.Submit.Empty -> shareError = "没有可分享的内容。"
+                        else -> {
+                            sharing = null
+                            onOpenChat()
+                        }
+                    }
                 },
             )
         }
@@ -405,19 +488,45 @@ fun FeedScreen(
         }
         pendingDelete?.let { post ->
             AlertDialog(
-                onDismissRequest = { pendingDelete = null },
+                onDismissRequest = { if (!deleting) pendingDelete = null },
                 title = { Text("删掉这条？") },
-                text = { Text("删掉以后就看不到了。已经记下的事还在。") },
-                confirmButton = {
-                    TextButton(onClick = {
-                        vm.delete(post.id)
-                        pendingDelete = null
-                    }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+                        Text("删掉以后就看不到了。已经记下的事还在。")
+                        if (deleteError) FeedError("没能删除这条动态，请重试。")
+                    }
                 },
-                dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text(stringResource(R.string.cancel)) } },
+                confirmButton = {
+                    TextButton(
+                        enabled = !deleting,
+                        onClick = {
+                            deleting = true
+                            deleteError = false
+                            vm.delete(post.id) { ok ->
+                                deleting = false
+                                if (ok) pendingDelete = null else deleteError = true
+                            }
+                        },
+                    ) { Text(if (deleting) "删除中…" else "删除", color = MaterialTheme.colorScheme.error) }
+                },
+                dismissButton = {
+                    TextButton(enabled = !deleting, onClick = { pendingDelete = null }) {
+                        Text(stringResource(R.string.cancel))
+                    }
+                },
             )
         }
     }
+}
+
+@Composable
+private fun FeedError(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text,
+        modifier = modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        color = MaterialTheme.colorScheme.error,
+        style = MaterialTheme.typography.bodySmall,
+    )
 }
 
 /** 分享前先选收件人；目前只有她，选中后才允许发送。 */
@@ -428,6 +537,7 @@ private fun FeedShareSheet(
     post: FeedStore.Post,
     authorName: String,
     herName: String,
+    error: String?,
     onDismiss: () -> Unit,
     onSend: () -> Unit,
 ) {
@@ -518,6 +628,7 @@ private fun FeedShareSheet(
                     modifier = Modifier.size(IconSize.lg),
                 )
             }
+            error?.let { FeedError(it, Modifier.padding(top = Space.sm)) }
             Button(
                 onClick = onSend,
                 enabled = selected,
@@ -549,13 +660,12 @@ private fun FeedPostCard(
     post: FeedStore.Post,
     herName: String,
     myName: String,
-    pronoun: String,
     saved: Boolean,
     onLike: (String) -> Unit,
     commentsOpen: Boolean,
     onCommentsOpenChange: (Boolean) -> Unit,
     onComposerBounds: (Rect) -> Unit,
-    onComment: (String, String?) -> Unit,
+    onComment: (String, String?, (Boolean) -> Unit) -> Unit,
     onShare: () -> Unit,
     onToggleSave: () -> Unit,
     onDelete: () -> Unit,
@@ -565,12 +675,15 @@ private fun FeedPostCard(
     val palette = LocalXiaomanPalette.current
     val mine = post.author == FeedStore.AUTHOR_ME
     var draft by remember(post.id) { mutableStateOf("") }
+    var sendingComment by remember(post.id) { mutableStateOf(false) }
+    var commentError by remember(post.id) { mutableStateOf(false) }
     // 点某条评论后进入回复态：输入框显示 @对方，发送时把这条评论的顶层 id 作为父级。
     var replyTo by remember(post.id) { mutableStateOf<FeedStore.Comment?>(null) }
     LaunchedEffect(commentsOpen) {
         if (!commentsOpen) {
             draft = ""
             replyTo = null
+            commentError = false
         }
     }
     var menu by remember(post.id) { mutableStateOf(false) }
@@ -592,7 +705,7 @@ private fun FeedPostCard(
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    if (mine) "只有${pronoun}看得见" else "${herName}的日常",
+                    if (mine) "仅${herName}可见" else "${herName}的日常",
                     style = MaterialTheme.typography.labelSmall,
                     color = palette.ink3,
                 )
@@ -673,7 +786,7 @@ private fun FeedPostCard(
                     FeedIconAction(Icons.Outlined.ChatBubbleOutline, "评论", palette.ink) {
                         onCommentsOpenChange(!commentsOpen)
                     }
-                    FeedIconAction(Icons.Outlined.Share, "转给她", palette.ink, onShare)
+                    FeedIconAction(Icons.Outlined.Share, "发给$herName", palette.ink, onShare)
                     if (post.memoryIds.isNotEmpty()) {
                         Row(
                             Modifier.heightIn(min = SizeTokens.touchTarget)
@@ -742,7 +855,13 @@ private fun FeedPostCard(
                             PortraitAvatar(graph, 30.dp, store = graph.myAvatar)
                             OutlinedTextField(
                                 value = draft,
-                                onValueChange = { if (it.length <= 120) draft = it },
+                                onValueChange = {
+                                    if (it.length <= 120) {
+                                        draft = it
+                                        commentError = false
+                                    }
+                                },
+                                enabled = !sendingComment,
                                 placeholder = { Text("说点什么…", style = MaterialTheme.typography.labelSmall) },
                                 // 回复态把 @对方 放进输入框，发送时用被点评论的顶层 id 作为父级。
                                 prefix = if (target != null) {
@@ -755,6 +874,7 @@ private fun FeedPostCard(
                                         IconButton(
                                             onClick = { replyTo = null },
                                             modifier = Modifier.size(SizeTokens.touchTarget),
+                                            enabled = !sendingComment,
                                         ) {
                                             Icon(
                                                 Icons.Outlined.Close,
@@ -774,13 +894,24 @@ private fun FeedPostCard(
                                 modifier = Modifier.weight(1f),
                             )
                             TextButton(
-                                enabled = draft.isNotBlank(),
+                                enabled = draft.isNotBlank() && !sendingComment,
                                 onClick = {
-                                    onComment(draft.trim(), target?.let { it.parentId ?: it.id })
-                                    draft = ""
-                                    replyTo = null
+                                    sendingComment = true
+                                    commentError = false
+                                    onComment(draft.trim(), target?.let { it.parentId ?: it.id }) { saved ->
+                                        sendingComment = false
+                                        if (saved) {
+                                            draft = ""
+                                            replyTo = null
+                                        } else {
+                                            commentError = true
+                                        }
+                                    }
                                 },
-                            ) { Text("发送") }
+                            ) { Text(if (sendingComment) "发送中…" else "发送") }
+                        }
+                        if (commentError) {
+                            FeedError("没能保存评论，请重试。", Modifier.padding(top = Space.xs))
                         }
                     }
                 }
@@ -917,12 +1048,17 @@ private fun FeedThumb(path: String, modifier: Modifier, onOpen: (String) -> Unit
 
 /** 发布态：文字 + 最多 9 图；相册选择后先留在内存，发布时才落盘。 */
 @Composable
-private fun FeedEditor(onCancel: () -> Unit, onPublish: (String, List<Uri>) -> Unit) {
+private fun FeedEditor(
+    onCancel: () -> Unit,
+    onPublish: (String, List<Uri>, (FeedViewModel.PublishResult) -> Unit) -> Unit,
+    onSaved: () -> Unit,
+) {
     val context = LocalContext.current
     val palette = LocalXiaomanPalette.current
     var text by rememberSaveable { mutableStateOf("") }
     val uris = remember { mutableStateListOf<Uri>() }
     var publishing by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { picked ->
         picked.take(FeedStore.MAX_IMAGES - uris.size).forEach { uris += it }
     }
@@ -946,9 +1082,21 @@ private fun FeedEditor(onCancel: () -> Unit, onPublish: (String, List<Uri>) -> U
                     enabled = (text.isNotBlank() || uris.isNotEmpty()) && !publishing,
                     onClick = {
                         publishing = true
-                        onPublish(text, uris.toList())
+                        error = null
+                        onPublish(text, uris.toList()) { result ->
+                            publishing = false
+                            when (result) {
+                                FeedViewModel.PublishResult.SAVED -> onSaved()
+                                FeedViewModel.PublishResult.ATTACHMENT_FAILED -> {
+                                    error = "有照片无法读取，请移除或重新选择后再发布。"
+                                }
+                                FeedViewModel.PublishResult.STORE_FAILED -> {
+                                    error = "没能保存动态，内容仍在编辑器里。请重试。"
+                                }
+                            }
+                        }
                     },
-                ) { Text("发") }
+                ) { Text(if (publishing) "发布中…" else "发") }
             }
             Column(
                 Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Space.xl),
@@ -957,6 +1105,7 @@ private fun FeedEditor(onCancel: () -> Unit, onPublish: (String, List<Uri>) -> U
                 BasicTextField(
                     value = text,
                     onValueChange = { if (it.length <= 500) text = it },
+                    enabled = !publishing,
                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = palette.ink),
                     cursorBrush = androidx.compose.ui.graphics.SolidColor(palette.accent),
                     modifier = Modifier.fillMaxWidth().heightIn(min = 140.dp),
@@ -969,6 +1118,7 @@ private fun FeedEditor(onCancel: () -> Unit, onPublish: (String, List<Uri>) -> U
                         }
                     },
                 )
+                error?.let { FeedError(it) }
                 Text("照片 ${uris.size}/${FeedStore.MAX_IMAGES}", style = MaterialTheme.typography.labelSmall, color = palette.ink3)
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     // 图片和「添加」共用三列格子，最多 9 张。
@@ -982,7 +1132,7 @@ private fun FeedEditor(onCancel: () -> Unit, onPublish: (String, List<Uri>) -> U
                                         Modifier.weight(1f).aspectRatio(1f)
                                             .clip(RoundedCornerShape(Radius.sm))
                                             .dashedBorder(palette.line, radius = Radius.sm)
-                                            .clickable { picker.launch("image/*") },
+                                            .clickable(enabled = !publishing) { picker.launch("image/*") },
                                         contentAlignment = Alignment.Center,
                                     ) {
                                         Column(
@@ -1004,7 +1154,7 @@ private fun FeedEditor(onCancel: () -> Unit, onPublish: (String, List<Uri>) -> U
                                         Box(
                                             Modifier.align(Alignment.TopEnd).padding(3.dp).size(20.dp)
                                                 .clip(CircleShape).background(Color.Black.copy(alpha = 0.55f))
-                                                .clickable { uris.remove(uri) },
+                                                .clickable(enabled = !publishing) { uris.remove(uri) },
                                             contentAlignment = Alignment.Center,
                                         ) {
                                             Icon(
@@ -1064,7 +1214,7 @@ private fun SavedPostsScreen(
                     verticalArrangement = Arrangement.Center,
                 ) {
                     Text(
-                        "还没有收藏。\n动态里点「收藏」，只存在这台手机上，不会告诉她。",
+                        "还没有收藏。\n动态里点「收藏」，只存在这台手机上，也不会通知对方。",
                         style = MaterialTheme.typography.bodyMedium,
                         color = palette.ink3,
                         textAlign = TextAlign.Center,

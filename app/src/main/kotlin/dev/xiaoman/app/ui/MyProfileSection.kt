@@ -1,5 +1,6 @@
 package dev.xiaoman.app.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -10,9 +11,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.PhotoCamera
@@ -28,11 +29,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -69,34 +72,34 @@ fun MyProfileScreen(graph: AppGraph, onBack: () -> Unit) {
     val age = profile.ageAt(today)
 
     SettingsSubpage("我的资料", onBack) {
-        MeGroup("基本资料") {
-            MeRow("昵称", profile.nickname.trim().takeIf { it.isNotEmpty() }, onClick = { editing = MeEdit.Nickname })
-            MeRow("性别", profile.gender.takeIf { it != ProfileGender.UNSET }?.label, onClick = { editing = MeEdit.Gender })
-            MeRow(
+        ProfileGroup("基本资料") {
+            ProfileRow("昵称", profile.nickname.trim().takeIf { it.isNotEmpty() }, onClick = { editing = MeEdit.Nickname })
+            ProfileRow("性别", profile.gender.takeIf { it != ProfileGender.UNSET }?.label, onClick = { editing = MeEdit.Gender })
+            ProfileRow(
                 "生日",
                 profile.birthday.trim().takeIf { it.isNotEmpty() },
                 hint = if (profile.hasBirthday) "年龄按生日实时算" else "1998-03-05，留空用固定年龄",
                 onClick = { editing = MeEdit.Birthday },
             )
             if (profile.hasBirthday) {
-                MeRow("年龄", age?.let { "$it 岁 · 由生日计算" }, editable = false)
+                ProfileRow("年龄", age?.let { "$it 岁 · 由生日计算" }, editable = false)
             } else {
-                MeRow("年龄", age?.let { "$it 岁" }, onClick = { editing = MeEdit.Age })
+                ProfileRow("年龄", age?.let { "$it 岁" }, onClick = { editing = MeEdit.Age })
             }
-            MeRow("家乡", profile.hometown.takeIf { it.isNotBlank() }, onClick = { editing = MeEdit.text(MeTextField.HOMETOWN) })
-            MeRow("常驻城市", profile.city.takeIf { it.isNotBlank() }, onClick = { editing = MeEdit.text(MeTextField.CITY) })
+            ProfileRow("家乡", profile.hometown.takeIf { it.isNotBlank() }, onClick = { editing = MeEdit.text(MeTextField.HOMETOWN) })
+            ProfileRow("常驻城市", profile.city.takeIf { it.isNotBlank() }, onClick = { editing = MeEdit.text(MeTextField.CITY) })
         }
-        MeGroup("生活") {
-            MeRow("学历", profile.education.takeIf { it.isNotBlank() }, onClick = { editing = MeEdit.text(MeTextField.EDUCATION) })
-            MeRow("宠物", profile.pets.takeIf { it.isNotBlank() }, onClick = { editing = MeEdit.text(MeTextField.PETS) })
-            MeRow("感情状态", profile.relationship.takeIf { it.isNotBlank() }, onClick = { editing = MeEdit.text(MeTextField.RELATIONSHIP) })
-            MeRow("生活偏好", profile.lifestyle.takeIf { it.isNotBlank() }, onClick = { editing = MeEdit.text(MeTextField.LIFESTYLE) })
+        ProfileGroup("生活") {
+            ProfileRow("学历", profile.education.takeIf { it.isNotBlank() }, onClick = { editing = MeEdit.text(MeTextField.EDUCATION) })
+            ProfileRow("宠物", profile.pets.takeIf { it.isNotBlank() }, onClick = { editing = MeEdit.text(MeTextField.PETS) })
+            ProfileRow("感情状态", profile.relationship.takeIf { it.isNotBlank() }, onClick = { editing = MeEdit.text(MeTextField.RELATIONSHIP) })
+            ProfileRow("生活偏好", profile.lifestyle.takeIf { it.isNotBlank() }, onClick = { editing = MeEdit.text(MeTextField.LIFESTYLE) })
         }
-        MeGroup("关于你") {
-            MeRow("外貌特征", profile.appearance.takeIf { it.isNotBlank() }, onClick = { editing = MeEdit.text(MeTextField.APPEARANCE) })
-            MeRow("性格设定", profile.personality.takeIf { it.isNotBlank() }, onClick = { editing = MeEdit.text(MeTextField.PERSONALITY) })
-            MeRow("语气设定", profile.tone.takeIf { it.isNotBlank() }, onClick = { editing = MeEdit.text(MeTextField.TONE) })
-            MeRow("经历补充", profile.background.takeIf { it.isNotBlank() }, onClick = { editing = MeEdit.text(MeTextField.BACKGROUND) })
+        ProfileGroup("关于你") {
+            ProfileRow("外貌特征", profile.appearance.takeIf { it.isNotBlank() }, onClick = { editing = MeEdit.text(MeTextField.APPEARANCE) })
+            ProfileRow("性格设定", profile.personality.takeIf { it.isNotBlank() }, onClick = { editing = MeEdit.text(MeTextField.PERSONALITY) })
+            ProfileRow("语气设定", profile.tone.takeIf { it.isNotBlank() }, onClick = { editing = MeEdit.text(MeTextField.TONE) })
+            ProfileRow("经历补充", profile.background.takeIf { it.isNotBlank() }, onClick = { editing = MeEdit.text(MeTextField.BACKGROUND) })
         }
     }
 
@@ -169,7 +172,7 @@ private fun MeCard(
                 Text(summary, style = MaterialTheme.typography.bodySmall, color = palette.ink2)
                 if (profile.isEmpty) {
                     Text(
-                        "点这里填一下自己，她说话会更像对着你。",
+                        "点这里填一下自己，让聊天更贴近你。",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
                     )
@@ -192,19 +195,19 @@ private fun MeCard(
 }
 
 @Composable
-private fun MeGroup(title: String, content: @Composable () -> Unit) {
+internal fun ProfileGroup(title: String, content: @Composable () -> Unit) {
     val palette = LocalXiaomanPalette.current
     Column(Modifier.fillMaxWidth()) {
         Text(
             title,
-            style = MaterialTheme.typography.labelMedium,
+            style = MaterialTheme.typography.titleSmall,
             color = palette.ink2,
             modifier = Modifier.padding(start = Space.xs, bottom = Space.sm),
         )
         Surface(
             shape = RoundedCornerShape(Radius.lg),
-            color = MaterialTheme.colorScheme.surface,
-            shadowElevation = Elevation.card,
+            color = palette.surface,
+            border = BorderStroke(1.dp, palette.line2),
             modifier = Modifier.fillMaxWidth(),
         ) {
             Column { content() }
@@ -212,20 +215,21 @@ private fun MeGroup(title: String, content: @Composable () -> Unit) {
     }
 }
 
-/** 一行一个字段：左标签、右值、箭头；整行至少 44dp 热区。 */
+/** 一行一个字段：左标签、右值和编辑入口。 */
 @Composable
-private fun MeRow(
+internal fun ProfileRow(
     label: String,
     value: String?,
     hint: String? = null,
     editable: Boolean = true,
+    trailingContent: (@Composable () -> Unit)? = null,
     onClick: (() -> Unit)? = null,
 ) {
     val palette = LocalXiaomanPalette.current
     Column(Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth()
-                .heightIn(min = 48.dp)
+                .heightIn(min = SizeTokens.touchTarget)
                 .then(
                     if (onClick != null) {
                         Modifier.pressClick(pressedScale = 0.995f, onClick = onClick)
@@ -233,26 +237,32 @@ private fun MeRow(
                         Modifier
                     },
                 )
-                // 不再画分隔线：靠行高与上下留白分层，读起来不像后台设置表。
-                .padding(horizontal = Space.lg, vertical = Space.lg),
+                .padding(horizontal = Space.xl, vertical = Space.sm),
+            horizontalArrangement = Arrangement.spacedBy(Space.sm),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(label, style = MaterialTheme.typography.bodyMedium, color = palette.ink, modifier = Modifier.weight(1f))
-            Text(
-                value ?: "未填",
-                style = MaterialTheme.typography.bodySmall,
-                color = if (value == null) palette.ink3 else palette.ink2,
-                textAlign = TextAlign.End,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.widthIn(max = 190.dp),
-            )
+            if (trailingContent != null) {
+                Box(Modifier.weight(1.3f), contentAlignment = Alignment.CenterEnd) {
+                    trailingContent()
+                }
+            } else {
+                Text(
+                    value ?: "未填",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (value == null) palette.ink3 else palette.ink2,
+                    textAlign = TextAlign.End,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1.3f),
+                )
+            }
             if (editable) {
                 Icon(
                     Icons.Outlined.ChevronRight,
                     contentDescription = null,
                     tint = palette.ink3,
-                    modifier = Modifier.padding(start = Space.xs).size(IconSize.md),
+                    modifier = Modifier.size(IconSize.md),
                 )
             }
         }
@@ -261,7 +271,7 @@ private fun MeRow(
                 hint,
                 style = MaterialTheme.typography.labelSmall,
                 color = palette.ink3,
-                modifier = Modifier.padding(start = Space.lg, end = Space.lg, bottom = Space.lg),
+                modifier = Modifier.padding(start = Space.xl, end = Space.xl, bottom = Space.sm),
             )
         }
     }
@@ -292,9 +302,9 @@ private enum class MeTextField(
     RELATIONSHIP("感情状态", "比如：单身 / 有伴侣"),
     APPEARANCE("外貌特征", "一两句就够，比如：短发、戴眼镜", multiline = true),
     PERSONALITY("性格设定", "比如：慢热、爱开玩笑、怕麻烦别人", multiline = true),
-    TONE("语气设定", "希望她怎么跟你说话；她仍会保留自己的口吻", multiline = true),
+    TONE("语气设定", "你喜欢的说话方式，角色仍会保留自己的口吻", multiline = true),
     LIFESTYLE("生活偏好", "作息、饮食、喜欢的东西", multiline = true),
-    BACKGROUND("经历补充", "想让她记住的事", multiline = true, maxLength = 300),
+    BACKGROUND("经历补充", "想让角色记住的事", multiline = true, maxLength = 300),
 }
 
 private fun MyProfile.valueOf(field: MeTextField): String = when (field) {
@@ -332,15 +342,15 @@ private fun MeEditDialog(
     onSave: (MyProfile) -> Unit,
 ) {
     when (target) {
-        MeEdit.Nickname -> EditTextDialog(
+        MeEdit.Nickname -> ProfileTextEditDialog(
             title = "昵称",
             initial = profile.nickname,
-            hint = "她怎么叫你",
+            hint = "希望在聊天中怎么称呼你",
             maxLength = 12,
             onDismiss = onDismiss,
             onConfirm = { onSave(profile.copy(nickname = it)) },
         )
-        MeEdit.Birthday -> EditTextDialog(
+        MeEdit.Birthday -> ProfileTextEditDialog(
             title = "生日",
             initial = profile.birthday,
             hint = "1998-03-05；留空就用固定年龄",
@@ -360,11 +370,12 @@ private fun MeEditDialog(
             },
             onConfirm = { onSave(profile.copy(birthday = it)) },
         )
-        MeEdit.Age -> EditTextDialog(
+        MeEdit.Age -> ProfileTextEditDialog(
             title = "年龄",
             initial = profile.fixedAge?.toString().orEmpty(),
             hint = "没填生日时使用",
             maxLength = 3,
+            keyboardType = KeyboardType.Number,
             onDismiss = onDismiss,
             validate = { raw ->
                 if (raw.isBlank()) {
@@ -378,12 +389,14 @@ private fun MeEditDialog(
                 onSave(profile.copy(fixedAge = raw.toIntOrNull()))
             },
         )
-        MeEdit.Gender -> GenderDialog(
+        MeEdit.Gender -> ProfileGenderEditDialog(
             initial = profile.gender,
+            options = ProfileGender.entries,
+            label = { it.label },
             onDismiss = onDismiss,
             onConfirm = { onSave(profile.copy(gender = it)) },
         )
-        is MeEdit.Text -> EditTextDialog(
+        is MeEdit.Text -> ProfileTextEditDialog(
             title = target.field.label,
             initial = profile.valueOf(target.field),
             hint = target.field.hint,
@@ -397,18 +410,19 @@ private fun MeEditDialog(
 
 /** 文本编辑统一弹层：单行/多行、长度限制、可选校验；保存前 trim。 */
 @Composable
-private fun EditTextDialog(
+internal fun ProfileTextEditDialog(
     title: String,
     initial: String,
     hint: String,
     maxLength: Int,
     multiline: Boolean = false,
+    keyboardType: KeyboardType = KeyboardType.Text,
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit,
     validate: (String) -> String? = { null },
 ) {
-    var text by remember(title) { mutableStateOf(initial) }
-    var error by remember(title) { mutableStateOf<String?>(null) }
+    var text by rememberSaveable(title) { mutableStateOf(initial) }
+    var error by rememberSaveable(title) { mutableStateOf<String?>(null) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title, style = MaterialTheme.typography.titleMedium) },
@@ -423,6 +437,7 @@ private fun EditTextDialog(
                         }
                     },
                     placeholder = { Text(hint, style = MaterialTheme.typography.bodySmall) },
+                    keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
                     isError = error != null,
                     minLines = if (multiline) 3 else 1,
                     maxLines = if (multiline) 6 else 1,
@@ -453,10 +468,12 @@ private fun EditTextDialog(
 }
 
 @Composable
-private fun GenderDialog(
-    initial: ProfileGender,
+internal fun <T> ProfileGenderEditDialog(
+    initial: T,
+    options: List<T>,
+    label: (T) -> String,
     onDismiss: () -> Unit,
-    onConfirm: (ProfileGender) -> Unit,
+    onConfirm: (T) -> Unit,
 ) {
     var choice by remember { mutableStateOf(initial) }
     AlertDialog(
@@ -464,11 +481,11 @@ private fun GenderDialog(
         title = { Text("性别", style = MaterialTheme.typography.titleMedium) },
         text = {
             Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                ProfileGender.entries.forEach { gender ->
+                options.forEach { gender ->
                     FilterChip(
                         selected = choice == gender,
                         onClick = { choice = gender },
-                        label = { Text(gender.label) },
+                        label = { Text(label(gender)) },
                     )
                 }
             }

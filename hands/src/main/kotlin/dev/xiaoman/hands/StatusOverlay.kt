@@ -115,7 +115,7 @@ class StatusOverlay(private val context: Context) {
             text = pendingText
             minHeight = dp(48)
             gravity = Gravity.CENTER_VERTICAL
-            contentDescription = "查看小满的任务"
+            contentDescription = context.getString(R.string.xiaoman_overlay_open_description)
             setOnClickListener { onOpen() }
             // Read status changes to TalkBack users.
             accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
@@ -135,7 +135,7 @@ class StatusOverlay(private val context: Context) {
             setPadding(pad * 2, pad / 2, pad / 2, pad / 2)
             background = GradientDrawable().apply {
                 cornerRadius = dp(24).toFloat()
-                setColor(0xF01E4635.toInt())
+                setColor(0xF0442A65.toInt())
             }
             addView(label, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginEnd = pad })
             addView(stop, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
@@ -153,7 +153,7 @@ class StatusOverlay(private val context: Context) {
     ).apply {
         gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
         y = dp(36)
-        title = "Xiaoman status"
+        title = context.getString(R.string.xiaoman_overlay_title)
     }
 
     private fun dp(v: Int): Int = (v * context.resources.displayMetrics.density).toInt()

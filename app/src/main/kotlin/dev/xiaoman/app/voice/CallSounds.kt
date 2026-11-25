@@ -4,6 +4,8 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.MediaPlayer
+import android.media.Ringtone
+import android.media.RingtoneManager
 import dev.xiaoman.app.R
 
 /**
@@ -14,6 +16,7 @@ class CallSounds(private val context: Context) {
 
     private val audioManager = context.getSystemService(AudioManager::class.java)
     private var ringback: MediaPlayer? = null
+    private var incoming: Ringtone? = null
 
     private val attributes = AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
@@ -30,8 +33,26 @@ class CallSounds(private val context: Context) {
         ringback = play(R.raw.call_ringback, loop = true)
     }
 
+    fun startIncoming() {
+        stopRingback()
+        if (audioManager?.ringerMode != AudioManager.RINGER_MODE_NORMAL) return
+        incoming = runCatching {
+            RingtoneManager.getRingtone(context, RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE))
+                ?.apply {
+                    audioAttributes = AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                    isLooping = true
+                    play()
+                }
+        }.getOrNull()
+    }
+
     /** 接通、挂断、未接都先停回铃。 */
     fun stopRingback() {
+        incoming?.let { runCatching { it.stop() } }
+        incoming = null
         ringback?.let { player ->
             runCatching { if (player.isPlaying) player.stop() }
             runCatching { player.release() }

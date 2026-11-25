@@ -6,25 +6,22 @@ import android.provider.OpenableColumns
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -46,6 +43,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.xiaoman.app.settings.AppSettings
 import dev.xiaoman.app.AppGraph
 import dev.xiaoman.app.persona.Voices
 import dev.xiaoman.app.voice.ClonedVoiceStore
@@ -67,8 +65,13 @@ import java.io.File
  * 样本只用于生成音色，生成成功后立刻删除本机文件；删除音色时先删云端再删本地索引。
  */
 @Composable
-fun VoiceCloneScreen(graph: AppGraph, onBack: () -> Unit) {
-    val settings by graph.settings.settings.collectAsStateWithLifecycle()
+internal fun VoiceCloneScreen(
+    graph: AppGraph,
+    settings: AppSettings,
+    onSaveSettings: (AppSettings) -> Boolean,
+    isVoiceUsedElsewhere: (String) -> Boolean,
+    onBack: () -> Unit,
+) {
     val clones by graph.clones.voices.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -93,7 +96,10 @@ fun VoiceCloneScreen(graph: AppGraph, onBack: () -> Unit) {
     var deleting by remember { mutableStateOf<ClonedVoiceStore.ClonedVoice?>(null) }
 
     fun setDefault(uri: String) {
-        graph.settings.save(settings.copy(persona = settings.persona.copy(voice = uri, voiceChosen = true)))
+        if (!onSaveSettings(settings.copy(persona = settings.persona.copy(voice = uri, voiceChosen = true)))) {
+            notice = "保存音色失败，请重试"
+            return
+        }
         notice = if (VoiceRouting.realtimeSupports(settings.realtime.baseUrl, uri)) {
             "已设为默认音色 · 朗读与通话音色同步"
         } else {
@@ -189,14 +195,6 @@ fun VoiceCloneScreen(graph: AppGraph, onBack: () -> Unit) {
         }
     }
 
-    BackHandler {
-        if (step == CloneStep.RECORDING) {
-            discardSample()
-        } else {
-            onBack()
-        }
-    }
-
     LaunchedEffect(step) {
         if (step != CloneStep.RECORDING) return@LaunchedEffect
         while (step == CloneStep.RECORDING) {
@@ -218,42 +216,32 @@ fun VoiceCloneScreen(graph: AppGraph, onBack: () -> Unit) {
         }
     }
 
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = Space.xl, end = Space.xl, bottom = Space.xl),
-        verticalArrangement = Arrangement.spacedBy(Space.md),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = Space.xs)) {
-            IconButton(onClick = onBack) {
-                Icon(
-                    Icons.AutoMirrored.Outlined.ArrowBack,
-                    contentDescription = "返回",
-                    tint = LocalXiaomanPalette.current.ink2,
-                )
-            }
-            Column {
-                Text("声音", style = MaterialTheme.typography.labelSmall, color = LocalXiaomanPalette.current.ink3)
-                Text("声音克隆", style = MaterialTheme.typography.titleLarge)
-            }
+    val palette = LocalXiaomanPalette.current
+    SettingsSubpage("声音克隆", onBack) {
+        BackHandler(enabled = step == CloneStep.RECORDING) { discardSample() }
+        Column(verticalArrangement = Arrangement.spacedBy(Space.xs)) {
+            Text("声音", style = MaterialTheme.typography.titleSmall, color = palette.ink)
+            Text(
+                "一男一女两个默认音色；克隆样本只用来生成音色，生成后本机不留副本。",
+                style = MaterialTheme.typography.bodySmall,
+                color = palette.ink2,
+            )
         }
-        Text(
-            "一男一女两个默认音色；克隆样本只用来生成音色，生成后本机不留副本。",
-            style = MaterialTheme.typography.bodySmall,
-            color = LocalXiaomanPalette.current.ink3,
-        )
 
         // 音色列表
-        Card(
+        OutlinedCard(
+            modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(Radius.lg),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            colors = CardDefaults.outlinedCardColors(containerColor = palette.surface),
+            border = BorderStroke(1.dp, palette.line2),
         ) {
-            Column(Modifier.fillMaxWidth().padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.fillMaxWidth().padding(Space.xl), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+                Column(verticalArrangement = Arrangement.spacedBy(Space.xs)) {
                     Text("音色列表", style = MaterialTheme.typography.titleSmall)
                     Text(
                         "朗读与通话共用",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 8.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = palette.ink2,
                     )
                 }
                 VoiceRow(
@@ -286,18 +274,19 @@ fun VoiceCloneScreen(graph: AppGraph, onBack: () -> Unit) {
         }
 
         // 克隆新音色
-        Card(
+        OutlinedCard(
+            modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(Radius.lg),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            colors = CardDefaults.outlinedCardColors(containerColor = palette.surface),
+            border = BorderStroke(1.dp, palette.line2),
         ) {
-            Column(Modifier.fillMaxWidth().padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.md)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.fillMaxWidth().padding(Space.xl), verticalArrangement = Arrangement.spacedBy(Space.md)) {
+                Column(verticalArrangement = Arrangement.spacedBy(Space.xs)) {
                     Text("克隆新音色", style = MaterialTheme.typography.titleSmall)
                     Text(
                         "8–30 秒 · 8–10 秒效果最好",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 8.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = palette.ink2,
                     )
                 }
                 StepChips(step)
@@ -486,12 +475,16 @@ fun VoiceCloneScreen(graph: AppGraph, onBack: () -> Unit) {
             confirmButton = {
                 TextButton(onClick = {
                     deleting = null
+                    if (isVoiceUsedElsewhere(clone.uri)) {
+                        notice = "其他角色正在使用这个音色，请先为他们更换音色"
+                        return@TextButton
+                    }
                     scope.launch {
                         try {
                             withContext(Dispatchers.IO) { api.deleteVoice(tts, clone.uri) }
                             withContext(Dispatchers.Main) {
                                 if (settings.persona.voice == clone.uri) {
-                                    graph.settings.save(
+                                    onSaveSettings(
                                         settings.copy(
                                             persona = dev.xiaoman.app.persona.PersonaSettings.withoutVoice(settings.persona, clone.uri),
                                         ),
@@ -524,13 +517,17 @@ private enum class CloneStep(val label: String) {
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun StepChips(step: CloneStep) {
     val order = listOf(CloneStep.SAMPLE, CloneStep.RECORDING, CloneStep.READY, CloneStep.NAMING, CloneStep.DONE)
     val active = when (step) {
         CloneStep.UPLOADING -> CloneStep.NAMING
         else -> step
     }
-    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(Space.xs),
+        verticalArrangement = Arrangement.spacedBy(Space.xs),
+    ) {
         order.forEachIndexed { i, s ->
             val on = s == active
             val done = order.indexOf(active) > i
@@ -576,13 +573,24 @@ private fun VoiceRow(
     onSet: () -> Unit,
     onDelete: (() -> Unit)? = null,
 ) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    val palette = LocalXiaomanPalette.current
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = SizeTokens.touchTarget),
+        horizontalArrangement = Arrangement.spacedBy(Space.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Column(Modifier.weight(1f)) {
             Text(name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
             Text(desc, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (current) {
-            Text("当前", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+            Text(
+                "当前",
+                style = MaterialTheme.typography.labelMedium,
+                color = palette.accentOnSoft,
+                modifier = Modifier.background(palette.accentSoft, RoundedCornerShape(Radius.pill))
+                    .padding(horizontal = Space.sm, vertical = Space.xs),
+            )
         } else {
             TextButton(onClick = onSet) { Text("设为默认") }
         }

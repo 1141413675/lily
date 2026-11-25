@@ -117,12 +117,12 @@ fun rememberPortraitPicker(graph: AppGraph, store: PortraitStore = graph.portrai
 }
 
 /**
- * 「小满」页的头像卡片：从相册选一张，居中裁成正方形，显示为圆形。
+ * 角色头像卡片：从相册选一张，居中裁成正方形，显示为圆形。
  * 图片只存本机；不调用任何生成接口。
  */
 @Composable
-fun PortraitCard(graph: AppGraph) {
-    val state by graph.portrait.state.collectAsStateWithLifecycle()
+fun PortraitCard(graph: AppGraph, store: PortraitStore = graph.portrait) {
+    val state by store.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var saving by remember { mutableStateOf(false) }
@@ -136,10 +136,10 @@ fun PortraitCard(graph: AppGraph) {
             val ok = withContext(Dispatchers.IO) {
                 runCatching {
                     val square = decodeSquare(context, uri, 512)
-                    val tmp = File(context.cacheDir, "avatar-${System.currentTimeMillis()}.jpg")
+                    val tmp = File.createTempFile("avatar-", ".jpg", context.cacheDir)
                     try {
                         tmp.outputStream().use { out -> square.compress(Bitmap.CompressFormat.JPEG, 92, out) }
-                        graph.portrait.saveAvatar(tmp)
+                        store.saveAvatar(tmp)
                     } finally {
                         tmp.delete()
                     }
@@ -161,7 +161,7 @@ fun PortraitCard(graph: AppGraph) {
         ) {
             Text("现在的样子", style = MaterialTheme.typography.titleSmall)
             Row(horizontalArrangement = Arrangement.spacedBy(Space.md), verticalAlignment = Alignment.CenterVertically) {
-                PortraitAvatar(graph, 64.dp)
+                PortraitAvatar(graph, 64.dp, store = store)
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
                         if (state.current == null) "还没有放照片" else "这张在用",

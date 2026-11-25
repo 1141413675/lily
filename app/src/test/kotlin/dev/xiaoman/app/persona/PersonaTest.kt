@@ -1,6 +1,8 @@
 package dev.xiaoman.app.persona
 
 import dev.xiaoman.agent.Prompts
+import dev.xiaoman.app.life.LifeSettings
+import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -55,7 +57,7 @@ class PersonaTest {
     @Test
     fun selfReferenceFollowsTheChoice() {
         assertEquals("我", PersonaSettings(selfRef = SelfRef.ME).selfName)
-        assertEquals("小满", PersonaSettings(selfRef = SelfRef.NAME).selfName)
+        assertEquals("Lily", PersonaSettings(selfRef = SelfRef.NAME).selfName)
         assertEquals("本人", PersonaSettings(selfRef = SelfRef.CUSTOM, customSelf = "本人").selfName)
         // 自定义留空时回退昵称，不出现空自称。
         assertEquals("阿岚", PersonaSettings(nickname = "阿岚", selfRef = SelfRef.CUSTOM, customSelf = "  ").selfName)
@@ -118,5 +120,46 @@ class PersonaTest {
         // 不在用的音色被删时不动当前选择。
         assertEquals(clone, PersonaSettings.withoutVoice(using, "speech:other").voice)
         assertEquals(Voices.DEFAULT_FEMALE, Voices.effective(PersonaSettings.withoutVoice(using, clone).voice, Gender.FEMALE))
+    }
+
+    @Test
+    fun exactBirthdayUsesTheDayAndLegacyBirthdayKeepsMonthPrecision() {
+        val legacy = PersonaSettings(birthdayYear = 2000, birthdayMonth = 2)
+        val exact = legacy.copy(birthdayDay = 29)
+        val beforeBirthday = LocalDate.of(2028, 2, 28)
+        assertEquals(null, legacy.birthdayDate())
+        assertEquals(28, legacy.ageAt(beforeBirthday))
+        assertEquals(LocalDate.of(2000, 2, 29), exact.birthdayDate())
+        assertEquals(27, exact.ageAt(beforeBirthday))
+        assertEquals(28, exact.ageAt(LocalDate.of(2028, 2, 29)))
+        assertEquals(null, legacy.copy(birthdayDay = 30).birthdayDate())
+    }
+
+    @Test
+    fun rolePromptUsesItsOwnProfileAndLifeFields() {
+        val role = PersonaSettings(
+            nickname = "海风",
+            birthdayYear = 1997,
+            birthdayMonth = 3,
+            birthdayDay = 5,
+            hometown = "苏州",
+            education = "本科",
+            relationshipStatus = "有伴侣",
+            appearance = "短发",
+            personality = "爱观察",
+            speechStyle = "直爽",
+            lifestyle = "爱逛旧书店",
+            background = "修过旧书",
+        )
+        val prompt = PersonaPrompt.rewrite(Prompts.DEFAULT_PERSONA, role, life = LifeSettings(city = "杭州", pet = "猫"))
+        for (fact in listOf(
+            "生日：1997-03-05", "家乡：苏州", "学历：本科", "感情状态：有伴侣", "外貌特征：短发",
+            "性格设定：爱观察", "说话语气：直爽", "生活偏好：爱逛旧书店", "经历补充：修过旧书",
+            "常驻城市：杭州", "宠物：猫",
+        )) {
+            assertTrue(prompt.contains(fact))
+        }
+        assertFalse(prompt.contains(Tone.GENTLE.rule))
+        assertFalse(PersonaPrompt.section(PersonaSettings()).contains("你的角色档案"))
     }
 }

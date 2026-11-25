@@ -5,10 +5,8 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -22,32 +20,27 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.outlined.Api
-import androidx.compose.material.icons.outlined.Call
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Extension
-import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.Image
-import androidx.compose.material.icons.outlined.Nightlight
 import androidx.compose.material.icons.outlined.Palette
-import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -61,14 +54,11 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -77,8 +67,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.xiaoman.app.AppGraph
@@ -88,97 +76,30 @@ import dev.xiaoman.app.settings.ImageSettings
 import dev.xiaoman.app.settings.ReplyMode
 import dev.xiaoman.app.settings.SettingsForm
 
-/**
- * 「我的」：顶部是用户本人档案（头像、昵称、分组字段），下面保留她的设置与系统入口；
- * 其余按主题拆成大小不一的 bento 卡片，点卡片原地 3D 翻转露出编辑面板，改完翻回即时生效。
- */
+/** 「我的」汇集个人资料和全局设置。 */
 @Composable
 fun SettingsScreen(
     graph: AppGraph,
     onBack: (() -> Unit)? = null,
-    /** 从动态里的「记忆」跳转：直接打开记忆二级页。 */
-    openMemoryPermalink: String? = null,
-    onOpenMemoryConsumed: () -> Unit = {},
     /** 二级页打开时外层收起底栏，回到设置首页再出现。 */
     onSubpageChange: (Boolean) -> Unit = {},
 ) {
-    var relation by remember { mutableStateOf(false) }
     var safety by remember { mutableStateOf(false) }
-    var persona by remember { mutableStateOf(false) }
     var skills by remember { mutableStateOf(false) }
     var services by remember { mutableStateOf(false) }
-    var voiceClone by remember { mutableStateOf(false) }
     var models by remember { mutableStateOf(false) }
-    var dream by remember { mutableStateOf(false) }
-    var memory by remember { mutableStateOf(false) }
-    var memoryFocus by remember { mutableStateOf<String?>(null) }
     var appearancePage by remember { mutableStateOf(false) }
     var backgroundPage by remember { mutableStateOf(false) }
     var imagePage by remember { mutableStateOf(false) }
     var dialoguePage by remember { mutableStateOf(false) }
     var storagePage by remember { mutableStateOf(false) }
     var profilePage by remember { mutableStateOf(false) }
-    var callRecords by remember { mutableStateOf(false) }
-    val subpage = voiceClone || models || dream || relation || persona || skills || services || safety ||
-        memory || appearancePage || backgroundPage || imagePage || dialoguePage || storagePage || profilePage ||
-        callRecords
+    val subpage = models || skills || services || safety ||
+        appearancePage || backgroundPage || imagePage || dialoguePage || storagePage || profilePage
     LaunchedEffect(subpage) { onSubpageChange(subpage) }
     DisposableEffect(Unit) { onDispose { onSubpageChange(false) } }
-    LaunchedEffect(openMemoryPermalink) {
-        if (openMemoryPermalink != null) {
-            memoryFocus = openMemoryPermalink
-            memory = true
-            onOpenMemoryConsumed()
-        }
-    }
-    // 「我们」页空状态的「去填她的生活」：直接落到「她是谁」。
-    LaunchedEffect(Unit) {
-        graph.openPersona.collect { requested ->
-            if (requested) {
-                persona = true
-                graph.openPersona.value = false
-            }
-        }
-    }
-    // 夜里从记忆页进入时，返回要回到记忆页；从设置卡进入则回设置首页。
-    if (dream) {
-        SubpageEnter { DreamScreen(graph, onBack = { dream = false }) }
-        return
-    }
-    if (memory) {
-        SubpageEnter {
-            MemoryScreen(
-                graph,
-                focusPermalink = memoryFocus,
-                onFocusConsumed = { memoryFocus = null },
-                onBack = { memory = false },
-                onOpenDream = { dream = true },
-            )
-        }
-        return
-    }
-    if (voiceClone) {
-        SubpageEnter { VoiceCloneScreen(graph, onBack = { voiceClone = false }) }
-        return
-    }
     if (models) {
         SubpageEnter { ModelsScreen(graph, onBack = { models = false }) }
-        return
-    }
-    // 关系档案从「小满人格与声音」里进入；先判关系，返回时回到人格页。
-    if (relation) {
-        SubpageEnter { RelationshipScreen(graph, onBack = { relation = false }) }
-        return
-    }
-    if (persona) {
-        SubpageEnter {
-            PersonaScreen(
-                graph,
-                onBack = { persona = false },
-                onOpenVoiceClone = { voiceClone = true },
-                onOpenRelation = { relation = true },
-            )
-        }
         return
     }
     if (skills) {
@@ -217,21 +138,8 @@ fun SettingsScreen(
         SubpageEnter { MyProfileScreen(graph, onBack = { profilePage = false }) }
         return
     }
-    if (callRecords) {
-        SubpageEnter {
-            CallRecordsScreen(
-                graph = graph,
-                onBack = { callRecords = false },
-                onCallBack = { callRecords = false; graph.openCall.value = true },
-            )
-        }
-        return
-    }
     val store = graph.settings
     val stored by store.settings.collectAsStateWithLifecycle()
-    val relationship by graph.relationship.state.collectAsStateWithLifecycle()
-    // 夜间整理只在主页显示状态；开关与时间点进二级页改。
-    val dreamConfig = remember { graph.dreamStore.config() }
 
     if (onBack != null) {
         BackHandler(onBack = onBack)
@@ -259,318 +167,106 @@ fun SettingsScreen(
         }
         Column(
             Modifier.weight(1f).verticalScroll(rememberScrollState())
-                .padding(start = Space.xl, end = Space.xl, bottom = Space.xl),
+                .padding(start = Space.xl, top = Space.sm, end = Space.xl, bottom = Space.xl),
             verticalArrangement = Arrangement.spacedBy(Space.sm),
         ) {
-            // 用户本人的档案只剩一张入口卡：点头像卡进入资料页，字段统一在那一页编辑。
             MyProfileSection(graph, onOpen = { profilePage = true })
-            Text(
-                "她的设置",
-                style = MaterialTheme.typography.labelMedium,
-                color = LocalXiaomanPalette.current.ink2,
-                modifier = Modifier.padding(start = Space.xs, top = Space.md),
-            )
-            val now = java.time.LocalDate.now()
-            PersonaPreviewCard(
-                graph = graph,
-                name = stored.persona.nameOr(stringResource(R.string.app_name)),
-                gender = stored.persona.gender.label,
-                age = stored.persona.ageAt(now),
-                summary = stored.persona.summary(),
-                daysText = "在一起 ${relationship.daysKnown(now)} 天",
-                height = BentoHeight.hero,
-                onOpen = { persona = true },
-            )
 
-            BentoRow {
-                BentoCard(
-                    title = stringResource(R.string.appearance_section),
-                    summary = stored.appearance.mode.label,
-                    icon = Icons.Outlined.Palette,
-                    height = BentoHeight.row,
-                    modifier = Modifier.weight(1f),
-                    onClick = { appearancePage = true },
-                )
-                BentoCard(
-                    title = "记忆",
-                    summary = "时间线与详情",
-                    icon = Icons.AutoMirrored.Outlined.MenuBook,
-                    height = BentoHeight.row,
-                    modifier = Modifier.weight(1f),
-                    onClick = { memory = true },
-                )
+            SettingsHomeGroup("聊天与外观") {
+                SettingsHomeRow(
+                    stringResource(R.string.settings_group_dialog), Icons.AutoMirrored.Outlined.Chat,
+                    stringResource(stored.replyMode.label()),
+                ) { dialoguePage = true }
+                SettingsHomeRow(
+                    "角色发图", Icons.Outlined.Image,
+                    if (stored.image.enabled) "每天最多 ${stored.image.dailyLimit} 张" else "已关闭",
+                ) { imagePage = true }
+                SettingsHomeRow("主题", Icons.Outlined.Palette, stored.appearance.mode.label) {
+                    appearancePage = true
+                }
+                SettingsHomeRow(
+                    "聊天背景", Icons.Outlined.PhotoLibrary,
+                    if (stored.appearance.hasImage) "自定义背景" else stored.appearance.backdrop.label,
+                ) { backgroundPage = true }
             }
-
-            BentoCard(
-                title = stringResource(R.string.call_records_title),
-                summary = stringResource(R.string.call_records_entry_summary),
-                icon = Icons.Outlined.Call,
-                modifier = Modifier.fillMaxWidth(),
-                height = BentoHeight.compact,
-                onClick = { callRecords = true },
-            )
-
-            BentoCard(
-                title = "发图",
-                summary = if (stored.image.enabled) {
-                    "每天最多 ${stored.image.dailyLimit} 张"
-                } else {
-                    "已关闭"
-                },
-                icon = Icons.Outlined.Image,
-                modifier = Modifier.fillMaxWidth(),
-                height = BentoHeight.editor,
-                onClick = { imagePage = true },
-            )
-
-            BentoCard(
-                title = "聊天背景",
-                summary = if (stored.appearance.hasImage) {
-                    "已设自定义背景 · 暗化 ${stored.appearance.dim}%"
-                } else {
-                    "${stored.appearance.backdrop.label} · 可换图"
-                },
-                icon = Icons.Outlined.PhotoLibrary,
-                modifier = Modifier.fillMaxWidth(),
-                height = BentoHeight.editor,
-                onClick = { backgroundPage = true },
-            )
-
-            BentoCard(
-                title = stringResource(R.string.settings_models_entry),
-                summary = if (stored.chat.configured) {
-                    "已配置 · ${stored.chat.model}"
-                } else {
-                    stringResource(R.string.settings_models_entry_hint)
-                },
-                icon = Icons.Outlined.Tune,
-                modifier = Modifier.fillMaxWidth(),
-                height = BentoHeight.editor,
-                onClick = { models = true },
-            )
-
-            BentoRow {
-                BentoCard(
-                    title = "关系",
-                    summary = "共同经历与边界",
-                    icon = Icons.Outlined.FavoriteBorder,
-                    modifier = Modifier.weight(1f),
-                    height = BentoHeight.row,
-                    onClick = { relation = true },
-                )
-                BentoCard(
-                    title = stringResource(R.string.settings_dream_entry),
-                    summary = if (dreamConfig.enabled) "每天 ${dreamConfig.time}" else "已关闭",
-                    icon = Icons.Outlined.Nightlight,
-                    modifier = Modifier.weight(1f),
-                    height = BentoHeight.row,
-                    onClick = { dream = true },
-                )
+            SettingsHomeGroup("高级设置") {
+                SettingsHomeRow(
+                    stringResource(R.string.settings_models_entry), Icons.Outlined.Tune,
+                    if (stored.chat.configured) "已配置" else "未配置",
+                ) { models = true }
+                SettingsHomeRow(stringResource(R.string.settings_skills_entry), Icons.Outlined.Extension) {
+                    skills = true
+                }
+                SettingsHomeRow(stringResource(R.string.settings_services_entry), Icons.Outlined.Hub) {
+                    services = true
+                }
+                SettingsHomeRow(stringResource(R.string.settings_safety_entry), Icons.Outlined.Shield) {
+                    safety = true
+                }
+                SettingsHomeRow(stringResource(R.string.settings_group_storage), Icons.Outlined.Storage) {
+                    storagePage = true
+                }
             }
-
-            BentoCard(
-                title = stringResource(R.string.settings_safety_entry),
-                summary = "隐私、导出与边界",
-                icon = Icons.Outlined.Shield,
-                modifier = Modifier.fillMaxWidth(),
-                height = BentoHeight.row,
-                onClick = { safety = true },
-            )
-
-            BentoRow {
-                BentoCard(
-                    title = stringResource(R.string.settings_skills_entry),
-                    summary = "技能与自动化",
-                    icon = Icons.Outlined.Extension,
-                    modifier = Modifier.weight(1f),
-                    height = BentoHeight.compact,
-                    onClick = { skills = true },
-                )
-                BentoCard(
-                    title = stringResource(R.string.settings_services_entry),
-                    summary = "MCP 连接",
-                    icon = Icons.Outlined.Hub,
-                    modifier = Modifier.weight(1f),
-                    height = BentoHeight.compact,
-                    onClick = { services = true },
-                )
-            }
-
-            BentoCard(
-                title = stringResource(R.string.settings_group_dialog),
-                summary = "${stringResource(stored.replyMode.label())} · 最多 ${stored.maxSteps} 步",
-                icon = Icons.AutoMirrored.Outlined.Chat,
-                modifier = Modifier.fillMaxWidth(),
-                height = BentoHeight.editor,
-                onClick = { dialoguePage = true },
-            )
-
-            BentoCard(
-                title = stringResource(R.string.settings_group_storage),
-                summary = "文件位置与清理",
-                icon = Icons.Outlined.Storage,
-                modifier = Modifier.fillMaxWidth(),
-                height = BentoHeight.compact,
-                onClick = { storagePage = true },
-            )
         }
     }
 }
 
-/**
- * 设置网格只有 2 列，行高固定三档：紧凑 112、标准 128、编辑 148。
- * 跨列卡固定占满 2 列，因此宽度永远是基准列的整数倍；同一行的卡用同一档行高。
- */
-private object BentoHeight {
-    val compact = 112.dp
-    val row = 128.dp
-    val editor = 148.dp
-    val hero = 128.dp
-}
-
-/** 设置首页第一块：头像、昵称、性别年龄与一句人设摘要，点整卡进完整人设页。 */
 @Composable
-private fun PersonaPreviewCard(
-    graph: AppGraph,
-    name: String,
-    gender: String,
-    age: Int?,
-    summary: String,
-    daysText: String,
-    height: Dp,
-    onOpen: () -> Unit,
-) {
-    val pickAvatar = rememberPortraitPicker(graph)
+private fun SettingsHomeGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
     val palette = LocalXiaomanPalette.current
-    val press = remember { MutableInteractionSource() }
-    Surface(
-        onClick = onOpen,
-        interactionSource = press,
-        shape = RoundedCornerShape(Radius.lg),
-        color = Color.Transparent,
-        shadowElevation = Elevation.card,
-        modifier = Modifier.fillMaxWidth().height(height).pressScale(press, 0.985f),
+    Column(
+        Modifier.fillMaxWidth().padding(top = Space.md),
+        verticalArrangement = Arrangement.spacedBy(Space.xs),
     ) {
-        // 恋人卡：浅雾紫渐变从左上铺到右下，去掉描边，靠色差和弱阴影分层。
-        Row(
-            Modifier.fillMaxSize().background(
-                Brush.linearGradient(listOf(palette.accentSoft, palette.surface)),
-            ).padding(Space.lg),
-            verticalAlignment = Alignment.CenterVertically,
+        Text(
+            title,
+            Modifier.padding(start = Space.sm),
+            style = MaterialTheme.typography.labelMedium,
+            color = palette.ink2,
+        )
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(Radius.lg),
+            color = palette.surface,
         ) {
-            Box(Modifier.size(72.dp)) {
-                Box(Modifier.fillMaxSize().clip(CircleShape).clickable { pickAvatar() }) {
-                    PortraitAvatar(graph, 72.dp)
-                }
-                // 「可换头像」从文案行移到头像角标，主行只保留关系天数。
-                Box(
-                    Modifier.align(Alignment.BottomEnd).size(24.dp).clip(CircleShape)
-                        .background(palette.accent).clickable { pickAvatar() },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        Icons.Outlined.PhotoCamera,
-                        contentDescription = "点头像可换",
-                        tint = palette.accentInk,
-                        modifier = Modifier.size(13.dp),
-                    )
-                }
-            }
-            Column(
-                Modifier.weight(1f).padding(start = Space.lg),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                Text(name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Text(
-                    "$gender · ${age?.let { "$it 岁" } ?: "年龄未填"}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    summary,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = palette.ink2,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                // 「在一起 XX 天」是这块卡的主角信息：抬高字号与字重，直接用品牌紫。
-                Text(
-                    daysText,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = palette.accent,
-                    modifier = Modifier.padding(top = 2.dp),
-                )
-            }
-            Icon(
-                Icons.Outlined.ChevronRight,
-                contentDescription = null,
-                tint = palette.ink3,
-                modifier = Modifier.size(IconSize.md),
-            )
+            Column(Modifier.padding(horizontal = Space.md, vertical = Space.xs), content = content)
         }
     }
 }
 
 @Composable
-private fun BentoRow(content: @Composable RowScope.() -> Unit) {
-    Row(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(Space.sm),
-        content = content,
-    )
-}
-
-/** bento 卡片：图标、标题与当前值摘要，点击进入对应的二级设置页。 */
-@Composable
-private fun BentoCard(
+internal fun SettingsHomeRow(
     title: String,
-    summary: String,
     icon: ImageVector,
-    height: Dp,
-    modifier: Modifier = Modifier,
+    value: String? = null,
     onClick: () -> Unit,
 ) {
     val palette = LocalXiaomanPalette.current
-    val press = remember { MutableInteractionSource() }
-    Surface(
-        onClick = onClick,
-        interactionSource = press,
-        shape = RoundedCornerShape(Radius.lg),
-        color = MaterialTheme.colorScheme.surface,
-        shadowElevation = Elevation.card,
-        modifier = modifier.height(height).pressScale(press, 0.985f),
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = SizeTokens.touchTarget)
+            .clip(RoundedCornerShape(Radius.lg))
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = Space.xs, vertical = Space.sm),
+        horizontalArrangement = Arrangement.spacedBy(Space.sm),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(
-            Modifier.fillMaxSize().padding(Space.lg),
-            verticalArrangement = Arrangement.spacedBy(Space.sm),
-        ) {
-            Icon(
-                icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(IconSize.lg),
-            )
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    title,
-                    style = MaterialTheme.typography.titleSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    summary,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = palette.ink3,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+        Icon(icon, contentDescription = null, tint = palette.accent, modifier = Modifier.size(IconSize.lg))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge, color = palette.ink)
+            if (value != null) {
+                Text(value, style = MaterialTheme.typography.bodySmall, color = palette.ink2)
             }
         }
+        Icon(
+            Icons.Outlined.ChevronRight,
+            contentDescription = null,
+            tint = palette.ink3,
+            modifier = Modifier.size(IconSize.md),
+        )
     }
 }
 
-/** 二级设置页统一外壳：固定返回 + 标题，内容全宽，控件按正常尺寸排布。 */
+/** 二级设置页的固定标题栏和可滚动内容。 */
 @Composable
 internal fun SettingsSubpage(
     title: String,
@@ -578,36 +274,40 @@ internal fun SettingsSubpage(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     BackHandler(onBack = onBack)
+    val palette = LocalXiaomanPalette.current
     Column(Modifier.fillMaxSize()) {
         Row(
-            Modifier.fillMaxWidth().padding(start = Space.xl, end = Space.xl, top = Space.xl),
+            Modifier.fillMaxWidth()
+                .padding(start = Space.sm, end = Space.page, top = Space.sm, bottom = Space.sm),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Space.xs),
         ) {
-            IconButton(onClick = onBack, modifier = Modifier.size(SizeTokens.touchTarget)) {
+            IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
                 Icon(
                     Icons.AutoMirrored.Outlined.ArrowBack,
                     contentDescription = stringResource(R.string.back),
-                    tint = LocalXiaomanPalette.current.ink2,
+                    tint = palette.accent,
                     modifier = Modifier.size(IconSize.lg),
                 )
             }
-            Text(title, style = MaterialTheme.typography.titleLarge)
+            Text(
+                title,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = palette.ink,
+            )
         }
+        HorizontalDivider(color = palette.line)
         Column(
             Modifier.weight(1f).verticalScroll(rememberScrollState())
-                .padding(start = Space.page, end = Space.page, bottom = Space.page),
-            verticalArrangement = Arrangement.spacedBy(Space.block),
+                .padding(start = Space.page, top = Space.lg, end = Space.page, bottom = Space.block),
+            verticalArrangement = Arrangement.spacedBy(24.dp),
             content = content,
         )
     }
 }
 
-/**
- * 二级页统一的四级层级，所有二级页都从这里取样式，不再各自手写：
- * 分组标题 labelMedium(11.5) / ink2；行标题 bodyLarge(15) / ink；
- * 说明 labelMedium(11.5, 常规字重) / ink3；控件值 bodyLarge(15) / ink2。
- * 组与组之间靠 28 的间距分开，组内 8；分隔线只在真的需要断开两段时用。
- */
+/** 分组标题与设置控件保持同一条左对齐线。 */
 @Composable
 internal fun SettingsGroup(title: String? = null, content: @Composable ColumnScope.() -> Unit) {
     val palette = LocalXiaomanPalette.current
@@ -615,20 +315,21 @@ internal fun SettingsGroup(title: String? = null, content: @Composable ColumnSco
         if (title != null) {
             Text(
                 title,
-                style = MaterialTheme.typography.labelMedium,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
                 color = palette.ink2,
-                modifier = Modifier.padding(bottom = Space.sm),
+                modifier = Modifier.padding(bottom = Space.lg),
             )
         }
         Column(
             Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(Space.sm),
+            verticalArrangement = Arrangement.spacedBy(Space.lg),
             content = content,
         )
     }
 }
 
-/** 一行设置：左侧行标题与可选说明，右侧控件；整行最小热区 44。 */
+/** 左侧文字可换行，右侧控件有独立间距。 */
 @Composable
 internal fun SettingsRow(
     title: String,
@@ -639,9 +340,10 @@ internal fun SettingsRow(
 ) {
     val palette = LocalXiaomanPalette.current
     Row(
-        modifier.fillMaxWidth().heightIn(min = SizeTokens.touchTarget)
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(vertical = Space.xs),
+        modifier.fillMaxWidth().heightIn(min = 48.dp)
+            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
+            .padding(vertical = Space.sm),
+        horizontalArrangement = Arrangement.spacedBy(Space.lg),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
@@ -649,9 +351,9 @@ internal fun SettingsRow(
             if (description != null) {
                 Text(
                     description,
-                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Normal),
+                    style = MaterialTheme.typography.bodySmall,
                     color = palette.ink3,
-                    modifier = Modifier.padding(top = 2.dp),
+                    modifier = Modifier.padding(top = Space.xs),
                 )
             }
         }
@@ -665,13 +367,13 @@ internal fun SettingsRow(
     }
 }
 
-/** 说明文字：11.5、ink3，明显退后于行标题。 */
+/** 辅助说明保持正文的换行和对比度。 */
 @Composable
 internal fun SettingsNote(text: String, modifier: Modifier = Modifier) {
     Text(
         text,
-        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Normal),
-        color = LocalXiaomanPalette.current.ink3,
+        style = MaterialTheme.typography.bodySmall,
+        color = LocalXiaomanPalette.current.ink2,
         modifier = modifier.fillMaxWidth(),
     )
 }
@@ -691,30 +393,11 @@ internal fun SettingsValue(text: String, modifier: Modifier = Modifier) {
 private fun AppearanceScreen(graph: AppGraph, onBack: () -> Unit) {
     val store = graph.settings
     val stored by store.settings.collectAsStateWithLifecycle()
-    val palette = LocalXiaomanPalette.current
-    SettingsSubpage(stringResource(R.string.appearance_section), onBack) {
-        SettingsGroup("主题") {
+    SettingsSubpage("主题", onBack) {
+        SettingsGroup("外观模式") {
             ThemeMode.entries.forEach { mode ->
-                Row(
-                    Modifier.fillMaxWidth().heightIn(min = SizeTokens.touchTarget)
-                        .selectable(
-                            selected = stored.appearance.mode == mode,
-                            onClick = {
-                                store.save(
-                                    store.current.copy(appearance = store.current.appearance.copy(mode = mode)),
-                                )
-                            },
-                            role = Role.RadioButton,
-                        ),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        mode.label,
-                        Modifier.weight(1f),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = palette.ink,
-                    )
-                    RadioButton(selected = stored.appearance.mode == mode, onClick = null)
+                SettingsChoice(mode.label, selected = stored.appearance.mode == mode) {
+                    store.save(store.current.copy(appearance = store.current.appearance.copy(mode = mode)))
                 }
             }
         }
@@ -727,10 +410,8 @@ private fun ChatBackgroundScreen(graph: AppGraph, onBack: () -> Unit) {
     val store = graph.settings
     val stored by store.settings.collectAsStateWithLifecycle()
     SettingsSubpage("聊天背景", onBack) {
-        SettingsGroup("背景图") {
-            ChatBackgroundSection(stored.appearance) { appearance ->
-                store.save(store.current.copy(appearance = appearance))
-            }
+        ChatBackgroundSection(stored.appearance) { appearance ->
+            store.save(store.current.copy(appearance = appearance))
         }
     }
 }
@@ -739,11 +420,11 @@ private fun ChatBackgroundScreen(graph: AppGraph, onBack: () -> Unit) {
 private fun ImageSettingsScreen(graph: AppGraph, onBack: () -> Unit) {
     val store = graph.settings
     val stored by store.settings.collectAsStateWithLifecycle()
-    SettingsSubpage("发图", onBack) {
-        SettingsGroup("主动发图") {
+    SettingsSubpage("角色发图", onBack) {
+        SettingsGroup("聊天发图") {
             SettingsRow(
-                title = "让她主动发图",
-                description = "你说想看看时，她按当下的对话细节生成；旧图只在回忆里复用，失败静默。",
+                title = "允许角色发图",
+                description = "按聊天内容生成图片，或在回忆时复用聊天里的旧图。",
                 trailing = {
                     XiaomanSwitch(checked = stored.image.enabled) {
                         store.save(store.current.copy(image = store.current.image.copy(enabled = it)))
@@ -764,7 +445,7 @@ private fun ImageSettingsScreen(graph: AppGraph, onBack: () -> Unit) {
                         )
                     }
                 }
-                SettingsNote("用聊天模型的方舟 Key 生成，一张约 ¥0.12；到上限后不再生成，不弹错误。")
+                SettingsNote("用聊天模型的方舟 Key 生成，一张约 ¥0.12。达到上限后可分享已有图片。")
             }
             SettingsGroup("图片模型") {
                 OutlinedTextField(
@@ -772,7 +453,7 @@ private fun ImageSettingsScreen(graph: AppGraph, onBack: () -> Unit) {
                     onValueChange = {
                         store.save(store.current.copy(image = store.current.image.copy(model = it)))
                     },
-                    label = { Text("图片模型") },
+                    label = { Text("模型 ID") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
                     modifier = Modifier.fillMaxWidth(),
@@ -806,6 +487,8 @@ private fun DialogueScreen(graph: AppGraph, onBack: () -> Unit) {
             store.save(
                 store.current.copy(
                     replyMode = next.replyMode,
+                    replyModeChosen = next.replyModeChosen,
+                    replyModeNotice = next.replyModeNotice,
                     maxSteps = p.maxSteps,
                     learnFromSuccess = next.learnFromSuccess,
                 ),
@@ -870,28 +553,48 @@ private fun StorageScreen(graph: AppGraph, onBack: () -> Unit) {
 
 @Composable
 private fun ReplyModeSection(value: ReplyMode, onChange: (ReplyMode) -> Unit) {
-    // 只给三档；CALL 是旧版遗留值，保留枚举读旧数据，不再出现在设置里。
-    listOf(ReplyMode.AUTO, ReplyMode.TEXT, ReplyMode.VOICE).forEach { mode ->
+    ReplyMode.entries.forEach { mode ->
+        SettingsChoice(
+            title = stringResource(mode.label()),
+            description = stringResource(mode.description()),
+            selected = value == mode,
+            onSelect = { onChange(mode) },
+        )
+    }
+}
+
+@Composable
+private fun SettingsChoice(title: String, selected: Boolean, description: String? = null, onSelect: () -> Unit) {
+    val palette = LocalXiaomanPalette.current
+    Surface(
+        shape = RoundedCornerShape(Radius.md),
+        color = if (selected) palette.accentSoft else palette.surface,
+        border = BorderStroke(1.dp, if (selected) palette.accent.copy(alpha = .35f) else palette.line),
+    ) {
         Row(
             Modifier.fillMaxWidth()
-                .selectable(selected = value == mode, onClick = { onChange(mode) }, role = Role.RadioButton)
-                .heightIn(min = SizeTokens.touchTarget),
+                .selectable(selected = selected, onClick = onSelect, role = Role.RadioButton)
+                .heightIn(min = 52.dp)
+                .padding(horizontal = Space.lg, vertical = Space.sm),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Space.sm),
         ) {
             Column(Modifier.weight(1f)) {
                 Text(
-                    stringResource(mode.label()),
+                    title,
                     style = MaterialTheme.typography.bodyLarge,
-                    color = LocalXiaomanPalette.current.ink,
+                    color = if (selected) palette.accentOnSoft else palette.ink,
                 )
-                Text(
-                    stringResource(mode.description()),
-                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Normal),
-                    color = LocalXiaomanPalette.current.ink3,
-                    modifier = Modifier.padding(top = 2.dp),
-                )
+                if (description != null) {
+                    Text(
+                        description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = palette.ink2,
+                        modifier = Modifier.padding(top = Space.xs),
+                    )
+                }
             }
-            RadioButton(selected = value == mode, onClick = null)
+            RadioButton(selected = selected, onClick = null)
         }
     }
 }

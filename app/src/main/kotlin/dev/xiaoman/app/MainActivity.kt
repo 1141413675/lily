@@ -9,6 +9,7 @@ import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.xiaoman.app.ui.XiaomanRoot
 import dev.xiaoman.app.ui.XiaomanTheme
+import dev.xiaoman.app.persona.AgentDirectory
 import dev.xiaoman.app.voice.CallService
 
 class MainActivity : ComponentActivity() {
@@ -26,23 +27,38 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val graph = (application as XiaomanApp).graph
-        openCallFrom(intent)
+        openDestinationFrom(intent)
         setContent {
             val settings by graph.settings.settings.collectAsStateWithLifecycle()
             XiaomanTheme(mode = settings.appearance.mode) { XiaomanRoot(graph) }
         }
     }
 
-    /** 点状态栏的通话胶囊回到通话页；事件只消费一次，避免之后每次进前台都弹。 */
+    /** 通知指定的是会话或正在进行的通话，导航只消费一次。 */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        openCallFrom(intent)
+        openDestinationFrom(intent)
     }
 
-    private fun openCallFrom(intent: Intent?) {
-        if (intent?.getBooleanExtra(CallService.EXTRA_OPEN_CALL, false) != true) return
+    private fun openDestinationFrom(intent: Intent?) {
+        if (intent == null) return
+        val graph = (application as XiaomanApp).graph
+        val openCall = intent.getBooleanExtra(CallService.EXTRA_OPEN_CALL, false)
+        val openChat = intent.getBooleanExtra(EXTRA_OPEN_CHAT, false)
+        val chatAgentId = intent.getStringExtra(EXTRA_OPEN_CHAT_AGENT)
         intent.removeExtra(CallService.EXTRA_OPEN_CALL)
-        (application as XiaomanApp).graph.openCall.value = true
+        intent.removeExtra(EXTRA_OPEN_CHAT)
+        intent.removeExtra(EXTRA_OPEN_CHAT_AGENT)
+        if (openCall) {
+            graph.openCall.value = graph.activeCallAgentId()
+        } else if (openChat) {
+            graph.openChat.value = chatAgentId ?: AgentDirectory.PRIMARY_ID
+        }
+    }
+
+    companion object {
+        internal const val EXTRA_OPEN_CHAT = "dev.xiaoman.app.extra.OPEN_CHAT"
+        internal const val EXTRA_OPEN_CHAT_AGENT = "dev.xiaoman.app.extra.OPEN_CHAT_AGENT"
     }
 }

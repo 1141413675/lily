@@ -1,13 +1,15 @@
-# Xiaoman
+# Lily
 
 [中文](README.md)
 
-An open-source personal agent that lives on an Android phone. You chat with it in its app; it
-remembers what you tell it and operates the other apps on the phone for you (打车、点外卖、改设置 ...).
-New scenarios are **skills**: small `SKILL.md` + `flow.yaml` folders you can push without rebuilding
-the APK.
+Lily is an open-source AI companion for Android. Set up a character, chat by text or voice,
+share private feed posts, and revisit your memories together.
 
-- Android 11 (API 30) or newer. It uses an accessibility service to read the screen and act.
+Lily also inherits optional assistant features. When enabled, it can help with phone actions
+through Android accessibility or connect to external services. Developers can extend these
+features with skill folders containing `SKILL.md` and an optional `flow.yaml`.
+
+- The Android app requires Android 11 (API 30) or newer.
 - iOS cannot run it on the phone alone (one app may not operate other apps). You can try it from a Mac
   that drives the iPhone through WebDriverAgent; see [docs/ios.md](docs/ios.md) (Chinese).
 - MCP servers (Amap, Tencent Maps, DiDi, 12306 ...) can serve lookups and bookings without operating
@@ -35,13 +37,14 @@ scripts/gradle.sh test :app:assembleDebug            # later runs work offline
 
 `scripts/gradle.sh` wraps `./gradlew` and keeps build output outside the checkout; see the script
 header for its environment variables.
+The GitHub Actions CI workflow also builds a Lily debug APK.
 
 ## Use
 
-1. Install the debug APK and open Xiaoman.
-2. Settings: enter base URL, model and API key for the chat and operator models.
-3. Turn on the Xiaoman accessibility service when the app asks.
-4. Chat: "帮我打车回家", "记住我家在 ...", "把 Wi-Fi 打开".
+1. Install the debug APK and open Lily.
+2. In Me → Models and APIs, enter the base URL, model name, and API key for the chat and operator models.
+3. Set up your character from Me, then start a conversation in Chat.
+4. To use phone actions, enable Lily's accessibility service when prompted.
 
 ## Skills and developer CLI
 
@@ -69,4 +72,5 @@ Forgetting deletes the file.
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+Lily is based on Xiaoman and retains the upstream MIT license and copyright notice.
+See [LICENSE](LICENSE).

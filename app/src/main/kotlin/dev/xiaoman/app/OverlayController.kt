@@ -39,8 +39,11 @@ class OverlayController(
                     remove()
                     overlay = StatusOverlay(service).also {
                         it.onStop = { session.stop() }
-                        it.onOpen = { service.startActivity(Intent(service, MainActivity::class.java)
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)) }
+                        it.onOpen = {
+                            service.startActivity(Intent(service, MainActivity::class.java)
+                                .putExtra(MainActivity.EXTRA_OPEN_CHAT, true)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+                        }
                         device.overlay = it
                         it.show()
                     }

@@ -52,8 +52,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.ArrowUpward
-import androidx.compose.material.icons.outlined.Call
-import androidx.compose.material.icons.outlined.CallEnd
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material.icons.outlined.Mic
@@ -74,10 +72,11 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.Lifecycle
@@ -88,6 +87,7 @@ import dev.xiaoman.app.AppGraph
 import dev.xiaoman.app.R
 import dev.xiaoman.app.appearance.AppearanceSettings
 import dev.xiaoman.app.appearance.ChatBackdrop
+import dev.xiaoman.app.image.ImageRequestFeedback
 import dev.xiaoman.app.media.StickerStore
 import dev.xiaoman.app.session.AgentSession
 import dev.xiaoman.app.session.ChatItem
@@ -100,18 +100,22 @@ import java.io.File
 @Composable
 internal fun ChatScreen(
     graph: AppGraph,
+    conversation: AppGraph.Conversation,
     onBack: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenAgentSettings: () -> Unit,
+    onOpenCompanionship: () -> Unit,
     onCall: () -> Unit,
     onViewImage: (ViewingImage?) -> Unit,
 ) {
-    val session = graph.session
+    val session = conversation.session
     val items by session.items.collectAsStateWithLifecycle()
     val busy by session.busy.collectAsStateWithLifecycle()
     val question by session.question.collectAsStateWithLifecycle()
     val approval by session.approval.collectAsStateWithLifecycle()
-    val settings by graph.settings.settings.collectAsStateWithLifecycle()
-    val voice = graph.voice
+    val settings by conversation.effectiveSettings.collectAsStateWithLifecycle()
+    val imageFeedback by conversation.chatImages.feedback.collectAsStateWithLifecycle()
+    val voice = conversation.voice
     val voiceSend by voice.send.collectAsStateWithLifecycle()
     val stickers by graph.stickers.stickers.collectAsStateWithLifecycle()
     val mic = rememberMicPermission()
@@ -125,19 +129,21 @@ internal fun ChatScreen(
     var tray by rememberSaveable { mutableStateOf(ComposerTray.NONE) }
     var library by rememberSaveable { mutableStateOf(false) }
     // 聊天背景移到设置 → 外观，聊天页只保留对话。
-    var incoming by remember { mutableStateOf(false) }
     var replyTo by remember { mutableStateOf<ChatItem.Quote?>(null) }
     var cameraFile by remember { mutableStateOf<File?>(null) }
     var notConnected by remember { mutableStateOf(false) }
-    // 她 10 秒还没回：只多一行「她还在写 / 停」，不展示处理过程。
+    // 等待 10 秒后，显示角色仍在写和停止按钮。
     var waitedLong by remember { mutableStateOf(false) }
     val rows = remember(items) { chatTimeline(items) }
     // 首次进入时的最后一条：之后新到的消息才逐条入场，历史消息交给页面转场。
     val enterFromId = remember { items.maxOfOrNull { it.id } ?: 0L }
     val listState = rememberLazyListState()
     val showJumpToBottom by remember { derivedStateOf { listState.canScrollForward } }
-    DisposableEffect(Unit) {
-        onDispose { voice.player.stop() }
+    DisposableEffect(voice) {
+        onDispose {
+            voice.cancelRecording()
+            voice.player.stop()
+        }
     }
     LaunchedEffect(busy) {
         waitedLong = false
@@ -188,7 +194,7 @@ internal fun ChatScreen(
     fun sendPhoto(uri: Uri) {
         scope.launch(Dispatchers.IO) {
             val temp = copyToCache(uri) ?: return@launch
-            val saved = graph.photos.save(temp)
+            val saved = conversation.photos.save(temp)
             temp.delete()
             if (saved != null) withContext(Dispatchers.Main) {
                 session.postImage(saved.absolutePath)
@@ -217,7 +223,7 @@ internal fun ChatScreen(
         if (shot == null) return@rememberLauncherForActivityResult
         if (!ok) { shot.delete(); return@rememberLauncherForActivityResult }
         scope.launch(Dispatchers.IO) {
-            val saved = graph.photos.save(shot)
+            val saved = conversation.photos.save(shot)
             shot.delete()
             if (saved != null) withContext(Dispatchers.Main) {
                 session.postImage(saved.absolutePath)
@@ -254,9 +260,11 @@ internal fun ChatScreen(
             // 顶栏只说她在不在；「正在回你」交给三点气泡，不做状态读数。
             val presence = if (!settings.configured) "还没连上" else "在"
             ChatHeader(name = herName, presence = presence, onCall = onCall,
-                onIncoming = { incoming = true },
+                onIncoming = conversation::ringIncoming,
                 onBack = onBack,
-                avatar = { PortraitAvatar(graph, SizeTokens.avatarHeader) })
+                onOpenAgentSettings = onOpenAgentSettings,
+                onOpenCompanionship = onOpenCompanionship,
+                avatar = { PortraitAvatar(graph, SizeTokens.avatarHeader, store = conversation.portrait) })
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 ChatBackgroundLayer(settings.appearance)
                 LazyColumn(
@@ -299,7 +307,7 @@ internal fun ChatScreen(
                                     },
                                     // 她连续说话只第一条带头像；尾角也只给一组最后一条。
                                     avatar = if (row.item is ChatItem.Assistant && !samePrev) {
-                                        { PortraitAvatar(graph, 26.dp) }
+                                        { PortraitAvatar(graph, 26.dp, store = conversation.portrait) }
                                     } else null,
                                     shareAvatar = (row.item as? ChatItem.UserFeedShare)?.let { share ->
                                         { PortraitAvatar(graph, 24.dp, store = if (share.authorIsMe) graph.myAvatar else graph.portrait) }
@@ -327,14 +335,14 @@ internal fun ChatScreen(
                         ) {
                             TypingBubble(
                                 avatar = if (lastItem !is ChatItem.Assistant) {
-                                    { PortraitAvatar(graph, 26.dp) }
+                                    { PortraitAvatar(graph, 26.dp, store = conversation.portrait) }
                                 } else null,
                             )
                         }
                     }
                     if (busy && waitedLong) item(key = "wait") {
                         Box(Modifier.fillMaxWidth().padding(top = Space.xs)) {
-                            LongWaitRow(session::stop)
+                            LongWaitRow(herName, onStop = session::stop)
                         }
                     }
                 }
@@ -377,6 +385,9 @@ internal fun ChatScreen(
                         )
                         TextButton(onClick = onOpenSettings, modifier = Modifier.tapTarget()) { Text("去设置") }
                     }
+                }
+                imageFeedback?.let { feedback ->
+                    ChatImageFeedbackRow(feedback, conversation.chatImages::retry, conversation.chatImages::dismissFeedback)
                 }
                 ChatInput(
                     draft, { draft = it }, session, busy, question != null,
@@ -436,18 +447,37 @@ internal fun ChatScreen(
                 }
             }
         }
-        if (incoming) {
-            // 用全屏 Dialog 盖住底栏，来电时不应还能点导航。
-            Dialog(
-                onDismissRequest = { incoming = false },
-                properties = DialogProperties(usePlatformDefaultWidth = false),
-            ) {
-                IncomingCallOverlay(
-                    graph = graph,
-                    name = herName,
-                    onAccept = { incoming = false; graph.call.ringIncoming(); onCall() },
-                    onDecline = { incoming = false },
-                )
+    }
+}
+
+@Composable
+private fun ChatImageFeedbackRow(
+    feedback: ImageRequestFeedback,
+    onRetry: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val message = when (feedback) {
+        ImageRequestFeedback.Generating -> "正在生成图片…"
+        ImageRequestFeedback.LimitReached -> "今天的图片生成额度已用完"
+        ImageRequestFeedback.Disabled -> "角色发图已关闭，可在「我的」中开启"
+        is ImageRequestFeedback.Failed -> "图片没能生成，请重试"
+    }
+    Row(
+        Modifier.fillMaxWidth().padding(start = Space.page, end = Space.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            message,
+            Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite },
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (feedback is ImageRequestFeedback.Failed) {
+            TextButton(onClick = onRetry) { Text("重试") }
+        }
+        if (feedback != ImageRequestFeedback.Generating) {
+            IconButton(onClick = onDismiss) {
+                Icon(Icons.Outlined.Close, contentDescription = "关闭图片提示")
             }
         }
     }
@@ -800,54 +830,6 @@ private fun HoldToTalkBar(
     }
 }
 
-/** 全屏来电：头像、名字、「想你了，接一下」，接听/挂断两个大圆键。 */
-@Composable
-private fun IncomingCallOverlay(graph: AppGraph, name: String, onAccept: () -> Unit, onDecline: () -> Unit) {
-    val palette = LocalXiaomanPalette.current
-    Surface(color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxSize()) {
-        Column(
-            Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = Space.xl),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Spacer(Modifier.weight(0.35f))
-            PortraitAvatar(graph, 120.dp)
-            Text(name, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(top = Space.lg))
-            Text(
-                "想你了，接一下。",
-                style = MaterialTheme.typography.bodyMedium,
-                color = palette.ink3,
-                modifier = Modifier.padding(top = Space.xs),
-            )
-            Spacer(Modifier.weight(1f))
-            Row(horizontalArrangement = Arrangement.spacedBy(64.dp)) {
-                IncomingCallButton(Icons.Outlined.CallEnd, "挂掉", MaterialTheme.colorScheme.error,
-                    MaterialTheme.colorScheme.onError, onDecline)
-                IncomingCallButton(Icons.Outlined.Call, "接", MaterialTheme.colorScheme.primary,
-                    MaterialTheme.colorScheme.onPrimary, onAccept)
-            }
-            Spacer(Modifier.weight(0.25f))
-        }
-    }
-}
-
-@Composable
-private fun IncomingCallButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    container: Color,
-    content: Color,
-    onClick: () -> Unit,
-) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Surface(onClick = onClick, shape = CircleShape, color = container) {
-            Box(Modifier.size(68.dp), contentAlignment = Alignment.Center) {
-                Icon(icon, contentDescription = label, tint = content, modifier = Modifier.size(28.dp))
-            }
-        }
-        Text(label, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = Space.sm))
-    }
-}
-
 /** 录音/识别状态条：只在录音、识别或出错时出现。 */
 @Composable
 private fun VoiceStatus(state: VoiceSend, onDismiss: () -> Unit) {
@@ -929,7 +911,7 @@ private fun rememberNotificationPermission(): NotificationPermission {
  * 模糊在 Android 12 以下自动降级为不模糊。
  */
 @Composable
-private fun ChatBackgroundLayer(a: AppearanceSettings) {
+internal fun ChatBackgroundLayer(a: AppearanceSettings) {
     val bitmap = remember(a.imagePath) {
         if (a.imagePath.isNotBlank()) {
             runCatching { android.graphics.BitmapFactory.decodeFile(a.imagePath) }.getOrNull()

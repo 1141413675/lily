@@ -13,6 +13,12 @@
     <string name="back">返回</string>
 
     <!-- Chat -->
+    <string name="chat_list_empty_preview">还没有消息</string>
+    <string name="chat_list_image_preview">图片</string>
+    <string name="chat_list_sticker_preview">表情</string>
+    <string name="chat_list_voice_preview">语音消息</string>
+    <string name="chat_list_shared_post_preview">分享了一条动态</string>
+    <string name="chat_list_recalled_preview">撤回了一条消息</string>
     <string name="chat_input_hint">说点什么…</string>
     <string name="chat_answer_hint">回我一句…</string>
     <string name="chat_send">发</string>
@@ -113,6 +119,15 @@
     <string name="settings_group_storage">本机与存储</string>
     <string name="settings_persona_hint">档案、照片、语气和声音</string>
     <string name="models_title">模型与接口</string>
+    <string name="models_embedding_title">记忆向量化</string>
+    <string name="models_embedding_switch">启用语义检索</string>
+    <string name="models_embedding_disclosure">开启并保存后，当前消息和该角色自己的记忆片段会发给指定服务生成向量，向量保存在本机。首次建立索引、功能关闭或接口不可用时，可继续用关键词找记忆。</string>
+    <string name="models_embedding_base_url">向量接口 Base URL</string>
+    <string name="models_embedding_base_hint">填写兼容 OpenAI 的 API 基础地址，例如以 /v1 或 /api/v3 结尾。手机本机地址也可用 HTTP。</string>
+    <string name="models_embedding_model">向量模型名称</string>
+    <string name="models_embedding_api_key">向量 API Key（可选）</string>
+    <string name="models_embedding_key_invalid">请使用服务提供的 Key，去掉中间的空格或换行。</string>
+    <string name="models_embedding_incomplete">填好有效的接口地址和模型名称后即可保存并启用。</string>
     <string name="models_subtitle">这里只放地址、模型名和 Key。性格与声音在「TA」里。</string>
     <string name="models_voice_hint">朗读和通话听到的是合成语音，不是真人录音。音色在「TA」里选。</string>
     <string name="models_key_ark">用方舟的 Key（ark- 开头），地址默认 https://ark.cn-beijing.volces.com/api/v3</string>
@@ -137,6 +152,7 @@
     <string name="settings_learn">成功后记住操作路径</string>
     <string name="settings_save">记住</string>
     <string name="settings_saved">记住了</string>
+    <string name="models_save_failed">保存失败，请重试</string>
     <string name="settings_invalid_number">这个数字不对</string>
     <string name="settings_copy_chat">和聊天模型一样</string>
     <string name="settings_folders">文件夹</string>
@@ -212,8 +228,8 @@
     <string name="settings_reply_text_desc">所有回复都用文字，不生成语音气泡。</string>
     <string name="settings_reply_voice">总是语音</string>
     <string name="settings_reply_voice_desc">所有回复都发语音气泡，点开才听。</string>
-    <string name="settings_reply_call">直接打给你</string>
-    <string name="settings_reply_call_desc">回复时跳到通话页，接通后说。</string>
+    <string name="settings_reply_call">发起通话</string>
+    <string name="settings_reply_call_desc">用应用内来电回应，等你接听才开始语音。</string>
 
     <!-- Voice messages (chat) -->
     <string name="voice_seconds">%1$d″</string>
@@ -275,7 +291,6 @@
     <string name="mcp_remove">删掉</string>
 
     <!-- Relationship / proactive -->
-    <string name="proactive_notification_title">小满</string>
     <string name="settings_relation_entry">你们</string>
     <string name="relation_title">你们</string>
     <string name="relation_profile">现在</string>
@@ -340,7 +355,7 @@
     <string name="safety_stage_action">已拦截（操作）</string>
     <string name="safety_stage_confirm">待确认操作</string>
 
-    <!-- 四 Tab 与小满设定 -->
+    <!-- 主导航与角色设定 -->
     <string name="nav_us">TA</string>
     <string name="chat_subtitle">在旁边</string>
     <string name="us_title">TA</string>
@@ -375,23 +390,23 @@
     <string name="persona_saved">记住了</string>
     <string name="memory_tab_memory">记忆</string>
     <string name="memory_tab_dream">做梦</string>
-    <string name="memory_remembered">她记得 %1$d 件事</string>
-    <string name="memory_source_user">你告诉她的</string>
-    <string name="memory_source_her">她自己看出来的</string>
-    <string name="memory_source_dream">她做梦时想通的</string>
-    <string name="memory_empty_timeline">她还在等你说点什么</string>
-    <string name="memory_title">她记得</string>
+    <string name="memory_remembered">%1$s记得 %2$d 件事</string>
+    <string name="memory_source_user">你告诉%1$s的</string>
+    <string name="memory_source_her">%1$s自己看出来的</string>
+    <string name="memory_source_dream">%1$s做梦时想通的</string>
+    <string name="memory_empty_timeline">%1$s还在等你说点什么</string>
+    <string name="memory_title">%1$s记得</string>
     <string name="memory_count">%1$d 件</string>
     <string name="memory_load_failed">没读出来 · 重试</string>
-    <string name="memory_dream_source">她梦里</string>
-    <string name="memory_last_night">昨晚，她想起 %1$d 件事</string>
+    <string name="memory_dream_source">%1$s梦里</string>
+    <string name="memory_last_night">昨晚，%1$s想起 %2$d 件事</string>
     <string name="memory_forget_this">忘掉这条</string>
     <string name="memory_forget_confirm_line">忘掉之后就没了</string>
     <string name="memory_forget_action">忘掉</string>
     <string name="memory_forget_cancel">算了</string>
     <string name="dream_night_title">夜里</string>
     <string name="dream_night_date">%1$s 夜</string>
-    <string name="dream_night_intro">昨晚，她想起 %1$d 件事。</string>
+    <string name="dream_night_intro">昨晚，%1$s想起 %2$d 件事。</string>
     <string name="dream_night_wrong">这条不对</string>
     <string name="dream_night_source">从聊天里</string>
     <string name="dream_night_note">整理是自动的，你只需要删掉不对的。</string>

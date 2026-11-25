@@ -45,8 +45,7 @@ class Notifier(private val context: Context, private val name: () -> String = { 
     }
 
     /** 通话中的持续通知：点回通话页；挂断、未接后由 [CallService] 撤掉。 */
-    fun call(startedAt: Long): Notification = NotificationCompat.Builder(context, CHANNEL_CALL)
-        .setSmallIcon(R.drawable.ic_stat_xiaoman)
+    fun call(startedAt: Long): Notification = builder(CHANNEL_CALL)
         .setContentTitle(context.getString(R.string.notification_call))
         .setContentText(context.getString(R.string.notification_call_return))
         .setOngoing(true)
@@ -60,8 +59,7 @@ class Notifier(private val context: Context, private val name: () -> String = { 
         .setContentIntent(openCall())
         .build()
 
-    fun status(text: String?): Notification = NotificationCompat.Builder(context, CHANNEL_STATUS)
-        .setSmallIcon(R.drawable.ic_stat_xiaoman)
+    fun status(text: String?): Notification = builder(CHANNEL_STATUS)
         .setContentTitle(context.getString(R.string.notification_running))
         .setContentText(text)
         .setOngoing(true)
@@ -69,7 +67,7 @@ class Notifier(private val context: Context, private val name: () -> String = { 
         .setSilent(true)
         .setCategory(NotificationCompat.CATEGORY_SERVICE)
         .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-        .setContentIntent(openApp())
+        .setContentIntent(openChat())
         .addAction(0, context.getString(R.string.chat_stop), action(NotificationActionReceiver.ACTION_STOP, null))
         .build()
 
@@ -81,15 +79,14 @@ class Notifier(private val context: Context, private val name: () -> String = { 
     fun showApproval(pending: PendingApproval?) {
         if (pending == null) return manager.cancel(ID_APPROVAL)
         if (!allowed()) return
-        val notification = NotificationCompat.Builder(context, CHANNEL_ATTENTION)
-            .setSmallIcon(R.drawable.ic_stat_xiaoman)
+        val notification = builder(CHANNEL_ATTENTION)
             .setContentTitle(context.getString(R.string.approval_title))
             .setContentText(pending.request.prompt)
             .setStyle(NotificationCompat.BigTextStyle().bigText(pending.request.prompt))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setOngoing(true)
-            .setContentIntent(openApp())
+            .setContentIntent(openChat())
             .addAction(0, context.getString(R.string.approval_once), action(NotificationActionReceiver.ACTION_APPROVE_ONCE, pending.id))
             .addAction(0, context.getString(R.string.approval_task), action(NotificationActionReceiver.ACTION_APPROVE_TASK, pending.id))
             .addAction(0, context.getString(R.string.approval_deny), action(NotificationActionReceiver.ACTION_DENY, pending.id))
@@ -100,14 +97,13 @@ class Notifier(private val context: Context, private val name: () -> String = { 
     fun showQuestion(pending: PendingQuestion?) {
         if (pending == null) return manager.cancel(ID_QUESTION)
         if (!allowed()) return
-        val notification = NotificationCompat.Builder(context, CHANNEL_ATTENTION)
-            .setSmallIcon(R.drawable.ic_stat_xiaoman)
+        val notification = builder(CHANNEL_ATTENTION)
             .setContentTitle(context.getString(if (pending.takeover) R.string.chat_takeover_label else R.string.notification_question))
             .setContentText(pending.question)
             .setStyle(NotificationCompat.BigTextStyle().bigText(pending.question))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
-            .setContentIntent(openApp())
+            .setContentIntent(openChat())
             .build()
         manager.notify(ID_QUESTION, notification)
     }
@@ -115,8 +111,7 @@ class Notifier(private val context: Context, private val name: () -> String = { 
     /** Heads-up notification posted when a reminder_set alarm fires. */
     fun showReminder(id: Int, text: String) {
         if (!allowed()) return
-        val notification = NotificationCompat.Builder(context, CHANNEL_REMINDERS)
-            .setSmallIcon(R.drawable.ic_stat_xiaoman)
+        val notification = builder(CHANNEL_REMINDERS)
             .setContentTitle(context.getString(R.string.reminder_title))
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
@@ -129,32 +124,44 @@ class Notifier(private val context: Context, private val name: () -> String = { 
     }
 
     /** 主动开口：复用提醒渠道，系统勿扰（DND）照常生效。 */
-    fun showProactive(text: String) {
+    fun showProactive(text: String, agentId: String? = null, agentName: String = name()) {
         if (!allowed()) return
-        val notification = NotificationCompat.Builder(context, CHANNEL_REMINDERS)
-            .setSmallIcon(R.drawable.ic_stat_xiaoman)
-            .setContentTitle(name())
+        val notification = builder(CHANNEL_REMINDERS)
+            .setContentTitle(agentName)
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setAutoCancel(true)
-            .setContentIntent(openChat())
+            .setContentIntent(openChat(agentId))
             .build()
-        manager.notify(ID_PROACTIVE, notification)
+        if (agentId == null) manager.notify(ID_PROACTIVE, notification)
+        else manager.notify(agentId, ID_PROACTIVE, notification)
     }
 
-    /** 主动开口点开必须落在聊天：清掉当前导航栈重进，会话内容在进程内存里不受影响。 */
-    private fun openChat(): PendingIntent = PendingIntent.getActivity(
-        context,
-        1,
-        Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),
-        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-    )
+    /** 消息和待处理事项直接打开会话，复用活动以保留会话草稿。 */
+    private fun openChat(agentId: String? = null): PendingIntent {
+        val intent = Intent(context, MainActivity::class.java)
+            .putExtra(MainActivity.EXTRA_OPEN_CHAT, true)
+            .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        if (agentId != null) {
+            intent.identifier = agentId
+            intent.putExtra(MainActivity.EXTRA_OPEN_CHAT_AGENT, agentId)
+        }
+        return PendingIntent.getActivity(
+            context, 1, intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+    }
 
     private fun allowed(): Boolean =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+
+    private fun builder(channel: String): NotificationCompat.Builder =
+        NotificationCompat.Builder(context, channel)
+            .setSmallIcon(R.drawable.ic_stat_lily)
+            .setColor(ContextCompat.getColor(context, R.color.lily_notification_accent))
 
     private fun openApp(): PendingIntent = PendingIntent.getActivity(
         context,

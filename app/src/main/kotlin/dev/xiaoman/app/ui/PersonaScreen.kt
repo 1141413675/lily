@@ -1,41 +1,36 @@
 package dev.xiaoman.app.ui
 
-import androidx.activity.compose.BackHandler
+import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,41 +44,46 @@ import dev.xiaoman.app.AppGraph
 import dev.xiaoman.app.R
 import dev.xiaoman.app.chat.EmojiStyle
 import dev.xiaoman.app.life.LifeSettings
+import dev.xiaoman.app.media.SceneryStore
 import dev.xiaoman.app.persona.Gender
 import dev.xiaoman.app.persona.PersonaSettings
 import dev.xiaoman.app.persona.VoiceOption
 import dev.xiaoman.app.persona.Voices
+import dev.xiaoman.app.portrait.PortraitStore
+import dev.xiaoman.app.settings.AppSettings
 import dev.xiaoman.app.voice.Speaker
 import dev.xiaoman.app.voice.VoiceApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.time.LocalDate
+import java.time.YearMonth
 import kotlin.math.roundToInt
 
 /** 试听与样本共用同一句，换音色时听到的差异只来自音色本身。 */
 private const val PREVIEW_LINE = "今天有点累，不过看到你就好了。"
 
-/**
- * 「小满人格与声音」：档案、表情、表达、生活图库、音色与关系档案，全部收在这一页。
- * 地址、模型名与 Key 不在这里，统一在「设置 · 模型与接口」。
- * 只写设置；历史记忆、关系档案与做梦记录都不改写。
- */
+/** 从单独对话进入，编辑当前角色的资料、生活和声音。 */
 @Composable
 fun PersonaScreen(
     graph: AppGraph,
+    settings: AppSettings,
+    portraitStore: PortraitStore,
+    sceneryStore: SceneryStore,
+    onSaveSettings: (AppSettings) -> Boolean,
     onBack: () -> Unit,
-    onOpenVoiceClone: () -> Unit = {},
-    onOpenRelation: () -> Unit = {},
+    isPrimary: Boolean = false,
+    onOpenVoiceClone: (() -> Unit)? = null,
+    onOpenRelation: (() -> Unit)? = null,
 ) {
-    val settings by graph.settings.settings.collectAsStateWithLifecycle()
     val persona = settings.persona
     val appName = stringResource(R.string.app_name)
-    // 昵称为空时显示应用名，不再落到写死的「小满」。
     val displayName = persona.nameOr(appName)
-    var nickname by remember(persona.nickname) { mutableStateOf(persona.nickname) }
-    var bioDraft by remember(persona.bio) { mutableStateOf(persona.bio) }
+    var editing by rememberSaveable { mutableStateOf<AgentProfileField?>(null) }
+    var editingAvatar by rememberSaveable { mutableStateOf(false) }
     var resetConfirm by remember { mutableStateOf(false) }
+    var clearLifeConfirm by remember { mutableStateOf(false) }
     var previewVoice by remember { mutableStateOf<String?>(null) }
     var hint by remember { mutableStateOf<String?>(null) }
     var speed by remember(settings.tts.speed) { mutableStateOf(settings.tts.speed) }
@@ -92,38 +92,71 @@ fun PersonaScreen(
     val speaker = remember { Speaker(File(context.cacheDir, "voice").apply { mkdirs() }) }
     val api = remember { VoiceApi() }
 
-    fun update(p: PersonaSettings) = graph.settings.save(settings.copy(persona = p))
+    fun save(next: AppSettings): Boolean {
+        if (onSaveSettings(next)) return true
+        Toast.makeText(context, "保存失败，请重试", Toast.LENGTH_SHORT).show()
+        return false
+    }
 
-    BackHandler(onBack = onBack)
+    fun update(p: PersonaSettings) = save(settings.copy(persona = p))
+
+    DisposableEffect(speaker) { onDispose { speaker.stop() } }
     val palette = LocalXiaomanPalette.current
-    Column(Modifier.fillMaxSize()) {
-        // 返回与标题固定，长页面滚到底也还能返回。
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth().padding(start = Space.xs, end = Space.page, top = Space.xs),
-        ) {
-            IconButton(onClick = onBack, modifier = Modifier.size(SizeTokens.touchTarget)) {
-                Icon(
-                    Icons.AutoMirrored.Outlined.ArrowBack,
-                    contentDescription = stringResource(R.string.back),
-                    tint = palette.ink2,
-                )
-            }
-            Column(Modifier.padding(start = Space.sm)) {
-                Text(stringResource(R.string.persona_title, displayName), style = MaterialTheme.typography.titleLarge)
-                SettingsNote("$displayName · ${persona.summary()}")
-            }
+    if (editingAvatar) {
+        SettingsSubpage("角色头像", onBack = { editingAvatar = false }) {
+            PortraitCard(graph, store = portraitStore)
         }
-        Column(
-            Modifier.weight(1f).verticalScroll(rememberScrollState())
-                .padding(start = Space.page, end = Space.page, bottom = Space.page),
-            verticalArrangement = Arrangement.spacedBy(Space.block),
-        ) {
+        return
+    }
 
-        if (settings.personaVoiceNotice) {
+    val today = LocalDate.now()
+    val birthday = persona.profileBirthdayText()
+    val age = persona.ageAt(today)
+    SettingsSubpage("${displayName}的设置", onBack) {
+        ProfileGroup("基本资料") {
+            ProfileRow(
+                "头像",
+                value = null,
+                trailingContent = { PortraitAvatar(graph, SizeTokens.avatarHeader, store = portraitStore) },
+                onClick = { editingAvatar = true },
+            )
+            AgentProfileRow(AgentProfileField.NICKNAME, settings) { editing = it }
+            AgentProfileRow(AgentProfileField.GENDER, settings) { editing = it }
+            ProfileRow(
+                "生日",
+                birthday,
+                hint = if (birthday != null) "年龄按生日实时算" else "1998-03-05，留空用固定年龄",
+                onClick = { editing = AgentProfileField.BIRTHDAY },
+            )
+            if (birthday != null) {
+                ProfileRow("年龄", age?.let { "$it 岁 · 由生日计算" }, editable = false)
+            } else {
+                ProfileRow("年龄", age?.let { "$it 岁" }, onClick = { editing = AgentProfileField.AGE })
+            }
+            AgentProfileRow(AgentProfileField.HOMETOWN, settings) { editing = it }
+            AgentProfileRow(AgentProfileField.CITY, settings) { editing = it }
+        }
+        ProfileGroup("生活") {
+            AgentProfileRow(AgentProfileField.EDUCATION, settings) { editing = it }
+            AgentProfileRow(AgentProfileField.PET, settings) { editing = it }
+            AgentProfileRow(AgentProfileField.RELATIONSHIP, settings) { editing = it }
+            AgentProfileRow(AgentProfileField.LIFESTYLE, settings) { editing = it }
+        }
+        ProfileGroup("关于角色") {
+            AgentProfileRow(AgentProfileField.APPEARANCE, settings) { editing = it }
+            AgentProfileRow(AgentProfileField.PERSONALITY, settings) { editing = it }
+            AgentProfileRow(AgentProfileField.SPEECH_STYLE, settings) { editing = it }
+            AgentProfileRow(AgentProfileField.BACKGROUND, settings) { editing = it }
+        }
+        ProfileGroup("角色设定") {
+            AgentProfileRow(AgentProfileField.BIO, settings) { editing = it }
+        }
+
+        if (isPrimary && settings.personaVoiceNotice) {
             Card(
+                modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(Radius.lg),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+                colors = CardDefaults.cardColors(containerColor = palette.accentSoft),
             ) {
                 Column(Modifier.padding(Space.lg)) {
                     Text(stringResource(R.string.persona_voice_migrated), style = MaterialTheme.typography.bodySmall)
@@ -134,210 +167,12 @@ fun PersonaScreen(
             }
         }
 
-        PersonaCard(stringResource(R.string.persona_nickname)) {
-            OutlinedTextField(
-                value = nickname,
-                onValueChange = { if (it.length <= PersonaSettings.MAX_NAME) { nickname = it; hint = null } },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text(stringResource(R.string.persona_nickname)) },
-            )
-            if (nickname.trim() != persona.nickname) {
-                Button(
-                    onClick = { update(persona.copy(nickname = nickname.trim().ifBlank { appName })) },
-                    colors = ButtonDefaults.buttonColors(containerColor = palette.accent, contentColor = palette.accentInk),
-                ) {
-                    Text(stringResource(R.string.relation_save))
-                }
-            }
-            Text(
-                stringResource(R.string.persona_nickname_hint, persona.pronoun),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-
-        PersonaCard("人设") {
-            Text(
-                "整段写你希望她是谁、怎么说话、在意什么。会原样进入对话设定；写具体比写形容词更稳。",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            OutlinedTextField(
-                value = bioDraft,
-                onValueChange = { if (it.length <= PersonaSettings.MAX_BIO) bioDraft = it },
-                minLines = 6,
-                maxLines = 14,
-                label = { Text("人设") },
-                // 空着时给一句可以直接照着写的引导，不写也能保存。
-                placeholder = {
-                    Text(
-                        "比如：她说话慢一点，会先接住你的情绪再给建议；喜欢在晚上问你今天累不累；不喜欢被叫全名。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                },
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                Button(
-                    enabled = bioDraft.trim() != persona.bio,
-                    onClick = { update(persona.copy(bio = bioDraft.trim())) },
-                    colors = ButtonDefaults.buttonColors(containerColor = palette.accent, contentColor = palette.accentInk),
-                ) { Text("保存人设") }
-                Text(
-                    "${bioDraft.length} / ${PersonaSettings.MAX_BIO}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = LocalXiaomanPalette.current.ink3,
-                )
-            }
-        }
-
-        PersonaCard(stringResource(R.string.persona_gender)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                Gender.entries.forEach { g ->
-                    FilterChip(
-                        selected = persona.gender == g,
-                        onClick = { update(persona.copy(gender = g)); hint = null },
-                        label = { Text(g.label) },
-                    )
-                }
-            }
-            Text(
-                stringResource(R.string.persona_pronoun_now, persona.pronoun),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                stringResource(R.string.persona_gender_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            // 只提示、不静默改：用户自己点一下才换音色。
-            val voiceGender = Voices.of(Voices.effective(persona.voice, persona.gender))?.gender
-            if (voiceGender != null && persona.gender != Gender.UNSPECIFIED && voiceGender != persona.gender) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "声音还是${voiceGender.label}声，要不要顺手换成${persona.gender.label}声？",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = LocalXiaomanPalette.current.ink3,
-                        modifier = Modifier.weight(1f),
-                    )
-                    TextButton(
-                        onClick = {
-                            update(persona.copy(voice = Voices.defaultVoice(persona.gender), voiceChosen = true))
-                            hint = null
-                        },
-                        modifier = Modifier.tapTarget(),
-                    ) {
-                        Text("换成${persona.gender.label}声", style = MaterialTheme.typography.labelSmall)
-                    }
-                }
-            }
-            // 生日只存年、月，年龄每次显示时实时算；不填则沿用设置首页的固定年龄。
-            var birthYear by remember(persona.birthdayYear) {
-                mutableStateOf(persona.birthdayYear?.toString().orEmpty())
-            }
-            var birthMonth by remember(persona.birthdayMonth) {
-                mutableStateOf(persona.birthdayMonth?.toString().orEmpty())
-            }
-            fun applyBirthday(yearText: String, monthText: String) {
-                if (yearText.isBlank() && monthText.isBlank()) {
-                    if (persona.birthdayYear != null) {
-                        update(
-                            persona.copy(
-                                birthdayYear = null,
-                                birthdayMonth = null,
-                                fixedAge = persona.ageAt() ?: persona.fixedAge,
-                            ),
-                        )
-                    }
-                    return
-                }
-                val y = yearText.toIntOrNull()
-                val m = monthText.toIntOrNull()
-                if (y != null && m != null && y in PersonaSettings.BIRTH_YEAR_RANGE && m in 1..12) {
-                    update(persona.copy(birthdayYear = y, birthdayMonth = m, fixedAge = null))
-                }
-            }
-            Text("生日（年 / 月）", style = MaterialTheme.typography.labelMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                OutlinedTextField(
-                    value = birthYear,
-                    onValueChange = { raw ->
-                        if (raw.length <= 4 && raw.all(Char::isDigit)) {
-                            birthYear = raw
-                            applyBirthday(raw, birthMonth)
-                        }
-                    },
-                    label = { Text("年") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.width(104.dp),
-                )
-                OutlinedTextField(
-                    value = birthMonth,
-                    onValueChange = { raw ->
-                        if (raw.length <= 2 && raw.all(Char::isDigit)) {
-                            birthMonth = raw
-                            applyBirthday(birthYear, raw)
-                        }
-                    },
-                    label = { Text("月") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.width(80.dp),
-                )
-            }
-            Text(
-                if (persona.birthdayYear != null && persona.birthdayMonth != null) {
-                    "现在 ${persona.ageAt()} 岁 · 每年按生日自动增长"
-                } else {
-                    "不填生日时，用下面的固定年龄"
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            if (persona.birthdayYear == null || persona.birthdayMonth == null) {
-                var ageDraft by remember(persona.fixedAge) {
-                    mutableStateOf(persona.fixedAge?.toString().orEmpty())
-                }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                    OutlinedTextField(
-                        value = ageDraft,
-                        onValueChange = { raw ->
-                            if (raw.length <= 3 && raw.all(Char::isDigit)) {
-                                ageDraft = raw
-                                val parsed = raw.toIntOrNull()
-                                update(
-                                    persona.copy(
-                                        fixedAge = parsed?.takeIf { it in PersonaSettings.AGE_RANGE },
-                                    ),
-                                )
-                            }
-                        },
-                        label = { Text("年龄") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.width(88.dp),
-                    )
-                    Text(
-                        "只显示数字，不参与对话",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = LocalXiaomanPalette.current.ink3,
-                    )
-                }
-            }
-        }
-
-        PortraitCard(graph)
-
         PersonaCard(stringResource(R.string.settings_emoji)) {
             Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                 EmojiStyle.entries.forEach { style ->
                     FilterChip(
                         selected = settings.emojiStyle == style,
-                        onClick = { graph.settings.save(settings.copy(emojiStyle = style)) },
+                        onClick = { save(settings.copy(emojiStyle = style)) },
                         label = { Text(style.label) },
                     )
                 }
@@ -349,13 +184,25 @@ fun PersonaScreen(
             )
         }
 
-        PersonaCard("${displayName}的生活") {
-            LifeFields(
-                life = settings.life,
-                name = displayName,
-                onSave = { graph.settings.save(settings.copy(life = it)) },
-            )
-            ScenerySection(graph.scenery, pronoun = persona.pronoun)
+        ProfileGroup("生活细节") {
+            AgentProfileRow(AgentProfileField.DOING, settings) { editing = it }
+            AgentProfileRow(AgentProfileField.ROUTINE, settings) { editing = it }
+            AgentProfileRow(AgentProfileField.MEDIA, settings) { editing = it }
+            AgentProfileRow(AgentProfileField.LIFE_BIO, settings) { editing = it }
+        }
+        PersonaCard("生活图库") {
+            if (isPrimary) {
+                Text(
+                    "新动态会参考这些生活设定，时间按手机时区计算。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            ScenerySection(sceneryStore, pronoun = persona.pronoun)
+            TextButton(
+                enabled = !settings.life.isEmpty,
+                onClick = { clearLifeConfirm = true },
+            ) { Text("清空生活设定") }
         }
 
         PersonaCard(stringResource(R.string.persona_voice)) {
@@ -372,6 +219,10 @@ fun PersonaScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                 )
+                TextButton(
+                    onClick = { update(persona.copy(voice = Voices.defaultVoice(persona.gender), voiceChosen = true)) },
+                    modifier = Modifier.tapTarget(),
+                ) { Text("换成${persona.gender.label}声") }
             }
             if (dev.xiaoman.app.voice.VoiceRouting.isClone(current) &&
                 !dev.xiaoman.app.voice.VoiceRouting.realtimeSupports(settings.realtime.baseUrl, current)
@@ -480,7 +331,9 @@ fun PersonaScreen(
                     steps = 3,
                     onValueChangeFinished = {
                         if (settings.tts.speed != speed) {
-                            graph.settings.save(settings.copy(tts = settings.tts.copy(speed = speed)))
+                            if (!save(settings.copy(tts = settings.tts.copy(speed = speed)))) {
+                                speed = settings.tts.speed
+                            }
                         }
                     },
                 )
@@ -510,7 +363,11 @@ fun PersonaScreen(
                     }
                 }
             }
-            TextButton(onClick = onOpenVoiceClone, modifier = Modifier.tapTarget()) { Text("声音克隆 · 录制与管理") }
+            if (onOpenVoiceClone != null) {
+                TextButton(onClick = onOpenVoiceClone, modifier = Modifier.tapTarget()) {
+                    Text("声音克隆 · 录制与管理")
+                }
+            }
             Text(
                 stringResource(R.string.persona_voice_hint),
                 style = MaterialTheme.typography.bodySmall,
@@ -519,96 +376,239 @@ fun PersonaScreen(
             hint?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
         }
 
-        PersonaCard("关系档案") {
-            Text(
-                "共同经历、未完成的话题、习惯打卡与边界，都在关系档案里。",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            TextButton(onClick = onOpenRelation, modifier = Modifier.tapTarget()) { Text("打开关系档案") }
+        if (onOpenRelation != null) {
+            PersonaCard("关系档案") {
+                Text(
+                    "共同经历、未完成的话题、习惯打卡与边界，都在关系档案里。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                TextButton(onClick = onOpenRelation, modifier = Modifier.tapTarget()) { Text("打开关系档案") }
+            }
         }
 
         TextButton(onClick = { resetConfirm = true }) { Text(stringResource(R.string.persona_reset)) }
-        if (resetConfirm) {
-            Card(shape = RoundedCornerShape(Radius.lg)) {
-                Column(Modifier.padding(Space.lg)) {
-                    Text(stringResource(R.string.persona_reset_confirm), style = MaterialTheme.typography.bodySmall)
-                    Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                        Button(onClick = {
-                            update(PersonaSettings.reset(persona).copy(nickname = appName))
-                            nickname = appName
-                            bioDraft = ""
-                            resetConfirm = false
-                        }) { Text(stringResource(R.string.persona_reset_yes)) }
-                        TextButton(onClick = { resetConfirm = false }) { Text(stringResource(R.string.persona_reset_no)) }
-                    }
-                }
-            }
-        }
-        Text(
-            "旧对话、记忆、关系档案与做梦记录里的历史内容不会被改写。",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+    }
+
+    editing?.let { field ->
+        AgentProfileEditDialog(
+            field = field,
+            settings = settings,
+            today = today,
+            onDismiss = { editing = null },
+            onSave = { next -> if (save(next)) editing = null },
         )
-        }
+    }
+    if (clearLifeConfirm) {
+        AlertDialog(
+            onDismissRequest = { clearLifeConfirm = false },
+            title = { Text("清空生活设定") },
+            text = { Text("会清空常驻城市、宠物和生活细节。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (save(settings.copy(life = LifeSettings.EMPTY))) clearLifeConfirm = false
+                }) { Text("清空") }
+            },
+            dismissButton = { TextButton(onClick = { clearLifeConfirm = false }) { Text("取消") } },
+        )
+    }
+    if (resetConfirm) {
+        AlertDialog(
+            onDismissRequest = { resetConfirm = false },
+            title = { Text(stringResource(R.string.persona_reset)) },
+            text = { Text("会清空填写的角色资料和人设，并恢复默认性别和表达方式。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    val resetName = if (isPrimary) appName else persona.nickname
+                    if (update(PersonaSettings.reset(persona).copy(nickname = resetName))) {
+                        resetConfirm = false
+                    }
+                }) { Text(stringResource(R.string.persona_reset_yes)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { resetConfirm = false }) { Text(stringResource(R.string.persona_reset_no)) }
+            },
+        )
     }
 }
 
 @Composable
 private fun PersonaCard(title: String, content: @Composable () -> Unit) {
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-        Text(
-            title,
-            style = MaterialTheme.typography.labelMedium,
-            color = LocalXiaomanPalette.current.ink2,
-        )
-        content()
-    }
-}
-
-/** 六个字段与设计稿一致；保存后下一条动态立刻使用新设定。 */
-@Composable
-private fun LifeFields(life: LifeSettings, name: String, onSave: (LifeSettings) -> Unit) {
-    var draft by remember(life) { mutableStateOf(life) }
-    val hint = "会出现在「我们」的动态里；时间仍按你手机的时区，不按城市换算。"
-    Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    if (draft.isEmpty) {
-        Text(
-            "$name 还没有自己的生活。填两笔，动态流才不会是空的。",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-    LifeInput("城市", draft.city, "例如：杭州", LifeSettings.MAX_CITY) { draft = draft.copy(city = it) }
-    LifeInput("在做什么", draft.doing, "例如：在小书店选书，周三休息", LifeSettings.MAX_DOING) { draft = draft.copy(doing = it) }
-    LifeInput("作息", draft.routine, "例如：七点起，十一点半睡", LifeSettings.MAX_ROUTINE) { draft = draft.copy(routine = it) }
-    LifeInput("宠物", draft.pet, "例如：一只叫年糕的橘猫", LifeSettings.MAX_PET) { draft = draft.copy(pet = it) }
-    LifeInput("在读 / 在追", draft.media, "例如：在读《夜航西飞》", LifeSettings.MAX_MEDIA) { draft = draft.copy(media = it) }
-    LifeInput("一句自述", draft.bio, "例如：不太会安慰人，但会一直听", LifeSettings.MAX_BIO) { draft = draft.copy(bio = it) }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Button(enabled = draft.trimmed() != life, onClick = { onSave(draft.trimmed()) }) { Text("保存生活") }
-        TextButton(onClick = {
-            draft = LifeSettings.EMPTY
-            onSave(LifeSettings.EMPTY)
-        }) { Text("清空") }
-        Text(
-            "改完点保存",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@Composable
-private fun LifeInput(label: String, value: String, placeholder: String, max: Int, onChange: (String) -> Unit) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = { if (it.length <= max) onChange(it) },
-        label = { Text(label) },
-        placeholder = { Text(placeholder, style = MaterialTheme.typography.bodySmall) },
-        singleLine = true,
+    val palette = LocalXiaomanPalette.current
+    Surface(
         modifier = Modifier.fillMaxWidth(),
-    )
+        shape = RoundedCornerShape(Radius.lg),
+        color = palette.surface,
+        border = BorderStroke(1.dp, palette.line2),
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(Space.xl),
+            verticalArrangement = Arrangement.spacedBy(Space.sm),
+        ) {
+            Text(title, style = MaterialTheme.typography.titleSmall, color = palette.ink)
+            content()
+        }
+    }
+}
+
+@Composable
+private fun AgentProfileRow(
+    field: AgentProfileField,
+    settings: AppSettings,
+    onEdit: (AgentProfileField) -> Unit,
+) {
+    ProfileRow(field.label, field.value(settings).takeIf(String::isNotBlank), onClick = { onEdit(field) })
+}
+
+@Composable
+private fun AgentProfileEditDialog(
+    field: AgentProfileField,
+    settings: AppSettings,
+    today: LocalDate,
+    onDismiss: () -> Unit,
+    onSave: (AppSettings) -> Unit,
+) {
+    val current = field.value(settings)
+    fun submit(value: String) {
+        if (value == current) onDismiss()
+        else onSave(field.withText(settings, value))
+    }
+
+    if (field == AgentProfileField.GENDER) {
+        ProfileGenderEditDialog(
+            initial = settings.persona.gender,
+            options = Gender.entries,
+            label = { it.label },
+            onDismiss = onDismiss,
+            onConfirm = { onSave(settings.copy(persona = settings.persona.copy(gender = it))) },
+        )
+    } else {
+        ProfileTextEditDialog(
+            title = field.label,
+            initial = current,
+            hint = field.hint,
+            maxLength = field.maxLength,
+            multiline = field.multiline,
+            keyboardType = if (field == AgentProfileField.AGE) KeyboardType.Number else KeyboardType.Text,
+            onDismiss = onDismiss,
+            onConfirm = ::submit,
+            validate = { raw -> field.validate(raw.trim(), current, today) },
+        )
+    }
+}
+
+private fun PersonaSettings.profileBirthdayText(): String? {
+    birthdayDate()?.let { return it.toString() }
+    if (birthdayDay != null) return null
+    val year = birthdayYear?.takeIf { it in PersonaSettings.BIRTH_YEAR_RANGE } ?: return null
+    val month = birthdayMonth?.takeIf { it in 1..12 } ?: return null
+    return YearMonth.of(year, month).toString()
+}
+
+private enum class AgentProfileField(
+    val label: String,
+    val hint: String,
+    val multiline: Boolean = false,
+    val maxLength: Int = PersonaSettings.MAX_PROFILE_TEXT,
+) {
+    NICKNAME("昵称", "希望在聊天中怎么称呼这个角色", maxLength = PersonaSettings.MAX_NAME),
+    GENDER("性别", ""),
+    BIRTHDAY("生日", "1998-03-05；留空就用固定年龄", maxLength = 10),
+    AGE("年龄", "没填生日时使用", maxLength = 3),
+    HOMETOWN("家乡", "比如：杭州"),
+    CITY("常驻城市", "现在住哪儿", maxLength = LifeSettings.MAX_CITY),
+    EDUCATION("学历", "比如：本科 / 在读研究生"),
+    PET("宠物", "比如：一只叫团子的猫", maxLength = LifeSettings.MAX_PET),
+    RELATIONSHIP("感情状态", "比如：单身 / 有伴侣"),
+    LIFESTYLE("生活偏好", "作息、饮食、喜欢的东西", multiline = true),
+    APPEARANCE("外貌特征", "比如：短发、戴眼镜", multiline = true),
+    PERSONALITY("性格设定", "比如：慢热、爱开玩笑", multiline = true),
+    SPEECH_STYLE("语气设定", "比如：说话慢一点，常用短句", multiline = true),
+    BACKGROUND("经历补充", "角色过去发生过的事", multiline = true, maxLength = PersonaSettings.MAX_BACKGROUND),
+    BIO("人设", "写角色是谁、怎么说话、在意什么", multiline = true, maxLength = PersonaSettings.MAX_BIO),
+    DOING("在做什么", "比如：在小书店选书，周三休息", maxLength = LifeSettings.MAX_DOING),
+    ROUTINE("作息", "比如：七点起，十一点半睡", maxLength = LifeSettings.MAX_ROUTINE),
+    MEDIA("在读 / 在追", "比如：在读《夜航西飞》", maxLength = LifeSettings.MAX_MEDIA),
+    LIFE_BIO("一句自述", "比如：不太会安慰人，但会一直听", maxLength = LifeSettings.MAX_BIO);
+
+    fun value(settings: AppSettings): String {
+        val persona = settings.persona
+        val life = settings.life
+        return when (this) {
+            NICKNAME -> persona.nickname
+            GENDER -> persona.gender.label
+            BIRTHDAY -> persona.profileBirthdayText().orEmpty()
+            AGE -> persona.fixedAge?.toString().orEmpty()
+            HOMETOWN -> persona.hometown
+            CITY -> life.city
+            EDUCATION -> persona.education
+            PET -> life.pet
+            RELATIONSHIP -> persona.relationshipStatus
+            LIFESTYLE -> persona.lifestyle
+            APPEARANCE -> persona.appearance
+            PERSONALITY -> persona.personality
+            SPEECH_STYLE -> persona.speechStyle
+            BACKGROUND -> persona.background
+            BIO -> persona.bio
+            DOING -> life.doing
+            ROUTINE -> life.routine
+            MEDIA -> life.media
+            LIFE_BIO -> life.bio
+        }
+    }
+
+    fun validate(value: String, current: String, today: LocalDate): String? {
+        if (value.isBlank() || value == current) return null
+        return when (this) {
+            BIRTHDAY -> {
+                val date = runCatching { LocalDate.parse(value) }.getOrNull()
+                if (date == null || date.isAfter(today) || date.year !in PersonaSettings.BIRTH_YEAR_RANGE) {
+                    "按 1998-03-05 填写生日，或留空用固定年龄"
+                } else {
+                    null
+                }
+            }
+            AGE -> {
+                val age = value.toIntOrNull()
+                if (age == null || age !in PersonaSettings.AGE_RANGE) "填 1–130 之间的年龄" else null
+            }
+            else -> null
+        }
+    }
+
+    fun withText(settings: AppSettings, value: String): AppSettings {
+        val persona = settings.persona
+        val life = settings.life
+        return when (this) {
+            NICKNAME -> settings.copy(persona = persona.copy(nickname = value.ifBlank { PersonaSettings.DEFAULT_NICKNAME }))
+            GENDER -> error("Gender uses the choice dialog.")
+            BIRTHDAY -> {
+                val date = value.takeIf(String::isNotBlank)?.let(LocalDate::parse)
+                settings.copy(persona = persona.copy(
+                    birthdayYear = date?.year,
+                    birthdayMonth = date?.monthValue,
+                    birthdayDay = date?.dayOfMonth,
+                    fixedAge = if (date == null) persona.ageAt() ?: persona.fixedAge else null,
+                ))
+            }
+            AGE -> settings.copy(persona = persona.copy(fixedAge = value.toIntOrNull()))
+            HOMETOWN -> settings.copy(persona = persona.copy(hometown = value))
+            CITY -> settings.copy(life = life.copy(city = value))
+            EDUCATION -> settings.copy(persona = persona.copy(education = value))
+            PET -> settings.copy(life = life.copy(pet = value))
+            RELATIONSHIP -> settings.copy(persona = persona.copy(relationshipStatus = value))
+            LIFESTYLE -> settings.copy(persona = persona.copy(lifestyle = value))
+            APPEARANCE -> settings.copy(persona = persona.copy(appearance = value))
+            PERSONALITY -> settings.copy(persona = persona.copy(personality = value))
+            SPEECH_STYLE -> settings.copy(persona = persona.copy(speechStyle = value))
+            BACKGROUND -> settings.copy(persona = persona.copy(background = value))
+            BIO -> settings.copy(persona = persona.copy(bio = value))
+            DOING -> settings.copy(life = life.copy(doing = value))
+            ROUTINE -> settings.copy(life = life.copy(routine = value))
+            MEDIA -> settings.copy(life = life.copy(media = value))
+            LIFE_BIO -> settings.copy(life = life.copy(bio = value))
+        }
+    }
 }
 
 /** 一组音色：整行点选，右侧只负责试听，两个动作互不打断。 */

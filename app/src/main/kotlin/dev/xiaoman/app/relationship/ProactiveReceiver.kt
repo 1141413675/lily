@@ -10,7 +10,7 @@ class ProactiveReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != ACTION_CHECK) return
         val graph = (context.applicationContext as XiaomanApp).graph
-        graph.proactive.check()
+        graph.checkProactiveAgents()
         graph.proactiveScheduler.schedule()
     }
 

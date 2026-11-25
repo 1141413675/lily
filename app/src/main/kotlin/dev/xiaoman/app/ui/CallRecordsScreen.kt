@@ -1,7 +1,9 @@
 package dev.xiaoman.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,6 +16,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.CallMade
 import androidx.compose.material.icons.automirrored.outlined.CallMissed
 import androidx.compose.material.icons.automirrored.outlined.CallReceived
+import androidx.compose.material.icons.outlined.Call
+import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -27,6 +32,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.xiaoman.app.AppGraph
@@ -37,22 +45,55 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** 全部通话记录：时间、方向、时长，点开看逐句往来；入口挂在「我的」里，不新增顶级导航。 */
+/** 当前角色的通话记录：时间、方向、时长，点开看逐句往来。 */
 @Composable
-internal fun CallRecordsScreen(graph: AppGraph, onBack: () -> Unit, onCallBack: () -> Unit) {
+internal fun CallRecordsScreen(
+    conversation: AppGraph.Conversation,
+    onBack: () -> Unit,
+    onCallBack: () -> Unit,
+) {
     val palette = LocalXiaomanPalette.current
-    val settings by graph.settings.settings.collectAsStateWithLifecycle()
+    val settings by conversation.effectiveSettings.collectAsStateWithLifecycle()
     val herName = settings.persona.nameOr(stringResource(R.string.app_name))
     // 进入页面时读一次：通话记录只增不改，不需要持续观察。
-    val logs = remember { graph.callLogs.list() }
-    var detail by remember { mutableStateOf<CallLog?>(null) }
+    val logs = remember(conversation.id) { conversation.callLogs.list() }
+    val groups = remember(logs) { logs.groupBy { callDate(it.startedAt) } }
+    var detail by remember(conversation.id) { mutableStateOf<CallLog?>(null) }
     SettingsSubpage(stringResource(R.string.call_records_title), onBack) {
         if (logs.isEmpty()) {
-            SettingsNote(stringResource(R.string.call_records_empty))
+            Column(
+                Modifier.fillMaxWidth().padding(vertical = Space.block),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(Space.sm),
+            ) {
+                Box(Modifier.size(48.dp).background(palette.accentSoft, CircleShape), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Outlined.Call, contentDescription = null, tint = palette.accentOnSoft)
+                }
+                Text(
+                    stringResource(R.string.call_records_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = palette.ink2,
+                    textAlign = TextAlign.Center,
+                )
+            }
         } else {
-            Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-                logs.forEach { log ->
-                    CallLogRow(log, herName) { detail = log }
+            groups.forEach { (date, calls) ->
+                Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+                    Text(
+                        date,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = palette.ink2,
+                        modifier = Modifier.padding(start = Space.sm),
+                    )
+                    Surface(shape = RoundedCornerShape(Radius.lg), color = palette.surface) {
+                        Column {
+                            calls.forEachIndexed { index, log ->
+                                if (index > 0) HorizontalDivider(Modifier.padding(start = 58.dp), color = palette.line)
+                                CallLogRow(log, herName) { detail = log }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -61,7 +102,7 @@ internal fun CallRecordsScreen(graph: AppGraph, onBack: () -> Unit, onCallBack: 
         CallDetailDialog(
             log = log,
             herName = herName,
-            player = graph.voice.player,
+            player = conversation.voice.player,
             onCallBack = { detail = null; onCallBack() },
             onDismiss = { detail = null },
         )
@@ -74,46 +115,35 @@ private fun CallLogRow(log: CallLog, herName: String, onOpen: () -> Unit) {
     val palette = LocalXiaomanPalette.current
     val missed = log.outcome == CallOutcome.MISSED.name
     val tint = if (missed) palette.danger else palette.accent
-    Surface(
-        onClick = onOpen,
-        shape = RoundedCornerShape(Radius.lg),
-        color = palette.surface,
-        shadowElevation = Elevation.card,
-        modifier = Modifier.fillMaxWidth(),
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(role = Role.Button, onClick = onOpen)
+            .padding(horizontal = Space.md, vertical = Space.sm),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            Modifier.heightIn(min = SizeTokens.touchTarget).padding(horizontal = Space.md, vertical = Space.sm),
-            verticalAlignment = Alignment.CenterVertically,
+        Box(
+            Modifier.size(36.dp).clip(CircleShape).background(palette.accentSoft),
+            contentAlignment = Alignment.Center,
         ) {
-            Column(
-                Modifier.size(36.dp).clip(CircleShape).background(palette.surface2),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                Icon(
-                    when {
-                        missed -> Icons.AutoMirrored.Outlined.CallMissed
-                        log.incoming -> Icons.AutoMirrored.Outlined.CallReceived
-                        else -> Icons.AutoMirrored.Outlined.CallMade
-                    },
-                    contentDescription = null,
-                    tint = tint,
-                    modifier = Modifier.size(IconSize.md),
-                )
-            }
-            Column(Modifier.weight(1f).padding(horizontal = Space.md)) {
-                Text(
-                    callLine(log, herName),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (missed) palette.danger else palette.ink,
-                )
-                Text(
-                    callTime(log.startedAt),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = palette.ink3,
-                )
-            }
+            Icon(
+                when {
+                    missed -> Icons.AutoMirrored.Outlined.CallMissed
+                    log.incoming -> Icons.AutoMirrored.Outlined.CallReceived
+                    else -> Icons.AutoMirrored.Outlined.CallMade
+                },
+                contentDescription = null,
+                tint = tint,
+                modifier = Modifier.size(IconSize.md),
+            )
         }
+        Column(Modifier.weight(1f).padding(horizontal = Space.md)) {
+            Text(
+                callLine(log, herName),
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (missed) palette.danger else palette.ink,
+            )
+            Text(callTime(log.startedAt), style = MaterialTheme.typography.labelMedium, color = palette.ink3)
+        }
+        Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = palette.ink3, modifier = Modifier.size(IconSize.md))
     }
 }
 
@@ -131,5 +161,8 @@ private fun callLine(log: CallLog, herName: String): String {
 
 private fun callDuration(seconds: Long): String = "%d:%02d".format(seconds / 60, seconds % 60)
 
+private fun callDate(at: Long): String =
+    SimpleDateFormat("yyyy年M月d日", Locale.CHINA).format(Date(at))
+
 private fun callTime(at: Long): String =
-    SimpleDateFormat("M月d日 HH:mm", Locale.CHINA).format(Date(at))
+    SimpleDateFormat("HH:mm", Locale.CHINA).format(Date(at))

@@ -26,6 +26,7 @@ import org.json.JSONObject
 import java.net.URLEncoder
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.abs
 
 /**
@@ -61,7 +62,7 @@ class RealtimeClient(
         .pingInterval(20, TimeUnit.SECONDS)
         .build()
 
-    private val player = PcmPlayer { onLevel(it) }
+    private val player = PcmPlayer { if (speaking) onLevel(it) }
     private val handledCalls = HashSet<String>()
 
     @Volatile private var socket: WebSocket? = null
@@ -72,6 +73,9 @@ class RealtimeClient(
     @Volatile private var speaking = false
     @Volatile private var loudChunks = 0
     @Volatile private var micMuted = false
+    @Volatile private var echoCancellationReady = false
+    @Volatile private var discardResponseAudio = false
+    @Volatile private var responseSequence = 0L
     /** 播放期间真正停掉采集：置 true 后采集循环会 stop + release AudioRecord。 */
     @Volatile private var capturePaused = false
     /** 至少暂停过一次，之后的每次恢复都要丢弃最前面的残留音频。 */
@@ -84,7 +88,7 @@ class RealtimeClient(
     /** 静音只停止上报麦克风，连接与当前回复都不受影响。 */
     fun setMuted(value: Boolean) {
         micMuted = value
-        if (value) onLevel(0f)
+        if (value && !speaking) onLevel(0f)
     }
 
     fun start(config: VoiceSettings) {
@@ -206,17 +210,19 @@ class RealtimeClient(
             "session.updated" -> onPhase(Phase.LISTENING)
             "input_audio_buffer.speech_started" -> if (speaking || responseActive) interruptPlayback()
             "response.created" -> {
+                responseSequence++
+                discardResponseAudio = false
                 responseActive = true
                 onPhase(Phase.THINKING)
             }
             "response.audio.delta" -> {
                 val audio = event.optString("delta")
-                if (audio.isNotEmpty()) {
+                if (audio.isNotEmpty() && !discardResponseAudio) {
                     if (!speaking) {
                         speaking = true
                         onPhase(Phase.SPEAKING)
-                        // 她一开始出声就停采集，避免外放的声音被她自己听回去。
-                        pauseCapture()
+                        // 只有设备的回声消除确实已启用，才在播放时保留本地插话检测。
+                        if (!echoCancellationReady) pauseCapture()
                     }
                     player.write(Base64.decode(audio, Base64.DEFAULT))
                 }
@@ -293,9 +299,12 @@ class RealtimeClient(
             onPhase(Phase.LISTENING)
             return
         }
-        scope.launch {
-            player.awaitDrained(30_000)
-            if (closed || responseActive) return@launch
+        val response = responseSequence
+        val playback = player.generation
+        scope.launch(Dispatchers.IO) {
+            val drained = player.awaitDrained(playback, 30_000)
+            if (closed || responseActive || response != responseSequence || playback != player.generation) return@launch
+            if (!drained) player.interrupt()
             if (speaking) {
                 speaking = false
                 onPhase(Phase.LISTENING)
@@ -306,6 +315,7 @@ class RealtimeClient(
     }
 
     private fun interruptPlayback() {
+        discardResponseAudio = true
         player.interrupt()
         speaking = false
         responseActive = false
@@ -372,6 +382,7 @@ class RealtimeClient(
                 }
                 record = recorder
                 val aec = enableEchoCancellation(recorder)
+                echoCancellationReady = aec != null
                 val buffer = ByteArray(CHUNK_BYTES)
                 try {
                     recorder.startRecording()
@@ -384,23 +395,29 @@ class RealtimeClient(
                         }
                         if (micMuted) {
                             loudChunks = 0
-                            onLevel(0f)
+                            if (!speaking) onLevel(0f)
                             continue
                         }
                         val chunk = buffer.copyOf(read)
-                        onLevel(peak(chunk) / 32767f)
+                        val amplitude = peak(chunk)
+                        if (speaking) {
+                            loudChunks = if (amplitude >= BARGE_PEAK) loudChunks + 1 else 0
+                            if (loudChunks < 2) continue
+                            interruptPlayback()
+                        }
+                        loudChunks = 0
+                        onLevel(amplitude / 32767f)
                         send(JSONObject()
                             .put("type", "input_audio_buffer.append")
                             .put("audio", Base64.encodeToString(chunk, Base64.NO_WRAP))
                             .toString())
-                        loudChunks = if (peak(chunk) >= BARGE_PEAK) loudChunks + 1 else 0
-                        if (speaking && loudChunks >= 2) interruptPlayback()
                     }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
                     if (!closed && !capturePaused) fail(e.message?.takeIf { it.isNotBlank() } ?: "麦克风读取失败")
                 } finally {
+                    echoCancellationReady = false
                     val aecOn = aec?.enabled == true
                     aec?.release()
                     try {
@@ -503,39 +520,57 @@ class RealtimeClient(
     /** Streaming PCM16/24 kHz playback with a flush/stop channel; bounded queue keeps latency low. */
     private inner class PcmPlayer(private val onPlayLevel: (Float) -> Unit) {
         private val queue = ArrayBlockingQueue<Any>(64)
+        /** 包括线程已经从队列取出、仍在写入 AudioTrack 的音频。 */
+        private val pendingChunks = AtomicInteger()
         private var thread: Thread? = null
 
         @Volatile private var track: AudioTrack? = null
         @Volatile private var writtenFrames = 0L
         @Volatile private var released = false
+        @Volatile private var failed = false
+        @Volatile var generation = 0L
+            private set
 
+        @Synchronized
         fun write(data: ByteArray) {
+            if (released || failed) return
             ensureThread()
+            pendingChunks.incrementAndGet()
             if (!queue.offer(data)) {
-                queue.poll()
-                queue.offer(data)
+                val oldestAudio = queue.firstOrNull { it is ByteArray }
+                if (oldestAudio != null && queue.remove(oldestAudio)) pendingChunks.decrementAndGet()
+                if (!queue.offer(data)) pendingChunks.decrementAndGet()
             }
         }
 
+        @Synchronized
         fun interrupt() {
-            queue.clear()
-            queue.offer(FLUSH)
+            generation++
+            clearQueuedAudio()
+            if (!released && !failed) queue.offer(FLUSH)
         }
 
-        fun awaitDrained(timeoutMs: Long): Boolean {
-            val output = track ?: return true
-            val deadline = System.currentTimeMillis() + timeoutMs
-            while (System.currentTimeMillis() < deadline) {
-                if ((output.playbackHeadPosition.toLong() and 0xFFFFFFFFL) >= writtenFrames) return true
-                Thread.sleep(80)
+        suspend fun awaitDrained(expectedGeneration: Long, timeoutMs: Long): Boolean {
+            val deadline = android.os.SystemClock.elapsedRealtime() + timeoutMs
+            while (!released && generation == expectedGeneration && android.os.SystemClock.elapsedRealtime() < deadline) {
+                if (failed) return false
+                if (pendingChunks.get() == 0) {
+                    val output = track
+                    val position = runCatching { output?.playbackHeadPosition }.getOrNull()
+                    if (position != null && (position.toLong() and 0xFFFFFFFFL) >= writtenFrames) return true
+                }
+                delay(40)
             }
             return false
         }
 
         fun release() {
-            released = true
-            queue.clear()
-            queue.offer(STOP)
+            synchronized(this) {
+                released = true
+                generation++
+                clearQueuedAudio()
+                queue.offer(STOP)
+            }
             thread?.join(800)
             thread = null
             try {
@@ -544,6 +579,18 @@ class RealtimeClient(
                 // Already released.
             }
             track = null
+        }
+
+        private fun clearQueuedAudio() {
+            val discarded = mutableListOf<Any>()
+            queue.drainTo(discarded)
+            pendingChunks.addAndGet(-discarded.count { it is ByteArray })
+        }
+
+        @Synchronized
+        private fun markFailed() {
+            failed = true
+            clearQueuedAudio()
         }
 
         private fun ensureThread() {
@@ -566,11 +613,15 @@ class RealtimeClient(
                 } catch (e: Exception) {
                     null
                 }
-                if (output == null) return@Thread
+                if (output == null) {
+                    markFailed()
+                    return@Thread
+                }
                 track = output
                 try {
                     output.play()
                 } catch (e: Exception) {
+                    markFailed()
                     return@Thread
                 }
                 while (!released) {
@@ -582,10 +633,12 @@ class RealtimeClient(
                     when (item) {
                         is ByteArray -> try {
                             onPlayLevel(peak(item) / 32767f)
-                            output.write(item, 0, item.size)
-                            writtenFrames += item.size / 2
+                            val written = output.write(item, 0, item.size)
+                            if (written > 0) writtenFrames += written / 2
                         } catch (e: Exception) {
                             // Track released.
+                        } finally {
+                            pendingChunks.decrementAndGet()
                         }
                         FLUSH -> {
                             onPlayLevel(0f)

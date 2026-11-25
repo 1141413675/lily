@@ -3,19 +3,21 @@ package dev.xiaoman.app.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -23,7 +25,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -37,10 +39,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.unit.dp
 import dev.xiaoman.app.AppGraph
 import dev.xiaoman.app.R
 import dev.xiaoman.mcp.CatalogServer
@@ -60,6 +64,7 @@ private val RECOMMENDED = setOf("amap", "aihot")
 
 /** One-tap MCP services: tick a service, paste its key, save. Changes apply from the next chat message. */
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 fun McpScreen(graph: AppGraph, onBack: (() -> Unit)? = null) {
     val store = graph.mcpSettings
     var selection by remember { mutableStateOf(store.current) }
@@ -67,6 +72,7 @@ fun McpScreen(graph: AppGraph, onBack: (() -> Unit)? = null) {
     var testing by remember { mutableStateOf(false) }
     val status = remember { mutableStateMapOf<String, ServerStatus>() }
     val scope = rememberCoroutineScope()
+    val palette = LocalXiaomanPalette.current
 
     fun update(next: McpSelection) {
         selection = next
@@ -75,70 +81,89 @@ fun McpScreen(graph: AppGraph, onBack: (() -> Unit)? = null) {
 
     if (onBack != null) BackHandler(onBack = onBack)
     Column(Modifier.fillMaxSize()) {
-        // 返回与标题固定，长列表滚到底也还能返回。
         Row(
-            Modifier.fillMaxWidth().padding(start = Space.xs, end = Space.page, top = Space.xs),
+            Modifier.fillMaxWidth().padding(start = Space.xl, end = Space.page, top = Space.xl),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (onBack != null) {
                 IconButton(onClick = onBack, modifier = Modifier.size(SizeTokens.touchTarget)) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
+                    Icon(
+                        Icons.AutoMirrored.Outlined.ArrowBack,
+                        contentDescription = stringResource(R.string.back),
+                        tint = palette.ink2,
+                    )
                 }
             }
             Text(stringResource(R.string.mcp_title), style = MaterialTheme.typography.titleLarge)
         }
         Column(
             Modifier.weight(1f).verticalScroll(rememberScrollState())
-                .padding(start = Space.page, end = Space.page, bottom = Space.page),
+                .padding(start = Space.page, end = Space.page, top = Space.sm, bottom = Space.page),
             verticalArrangement = Arrangement.spacedBy(Space.block),
         ) {
-        SettingsNote(stringResource(R.string.mcp_intro))
-        SettingsGroup("已启用") {
-            SettingsRow(
-                title = stringResource(R.string.mcp_enabled_count, selection.enabled.size + selection.custom.size),
-                trailing = {
-                    OutlinedButton(onClick = { update(selection.copy(enabled = selection.enabled + RECOMMENDED)) }) {
-                        Text(stringResource(R.string.mcp_recommended))
-                    }
-                },
-            )
-        }
+            SettingsNote(stringResource(R.string.mcp_intro))
+            SettingsGroup("已启用") {
+                SettingsRow(
+                    title = stringResource(R.string.mcp_enabled_count, selection.enabled.size + selection.custom.size),
+                    trailing = {
+                        OutlinedButton(onClick = { update(selection.copy(enabled = selection.enabled + RECOMMENDED)) }) {
+                            Text(stringResource(R.string.mcp_recommended))
+                        }
+                    },
+                )
+            }
 
-        catalog.groupBy { it.category }.forEach { (category, servers) ->
-            SettingsGroup(category) {
-                servers.forEach { server ->
-                    ServiceCard(
-                        server = server,
-                        selection = selection,
-                        status = status[server.id],
-                        onChange = ::update,
-                    )
+            catalog.groupBy { it.category }.forEach { (category, servers) ->
+                SettingsGroup(category) {
+                    servers.forEach { server ->
+                        ServiceCard(
+                            server = server,
+                            selection = selection,
+                            status = status[server.id],
+                            onChange = ::update,
+                        )
+                    }
                 }
             }
-        }
 
-        SettingsGroup(stringResource(R.string.mcp_custom_title)) {
-            CustomServers(selection, status, ::update)
+            SettingsGroup(stringResource(R.string.mcp_custom_title)) {
+                CustomServers(selection, status, ::update)
+            }
         }
-
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.lg)) {
-            Button(onClick = {
-                store.save(selection)
-                saved = true
-            }) { Text(stringResource(R.string.settings_save)) }
-            OutlinedButton(enabled = !testing, onClick = {
-                testing = true
-                scope.launch {
-                    try {
-                        status.clear()
-                        graph.testMcp(selection).forEach { status[it.name] = it }
-                    } finally {
-                        testing = false
+        Surface(color = palette.surface) {
+            Column {
+                HorizontalDivider(color = palette.line)
+                FlowRow(
+                    Modifier.fillMaxWidth().padding(horizontal = Space.page, vertical = Space.sm),
+                    horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                    verticalArrangement = Arrangement.spacedBy(Space.xs),
+                ) {
+                    Button(onClick = {
+                        store.save(selection)
+                        saved = true
+                    }) { Text(stringResource(R.string.settings_save)) }
+                    OutlinedButton(enabled = !testing, onClick = {
+                        testing = true
+                        scope.launch {
+                            try {
+                                status.clear()
+                                graph.testMcp(selection).forEach { status[it.name] = it }
+                            } finally {
+                                testing = false
+                            }
+                        }
+                    }) { Text(stringResource(if (testing) R.string.mcp_testing else R.string.mcp_test)) }
+                    if (saved) {
+                        Text(
+                            stringResource(R.string.settings_saved),
+                            modifier = Modifier.align(Alignment.CenterVertically)
+                                .semantics { liveRegion = LiveRegionMode.Polite },
+                            style = MaterialTheme.typography.labelMedium,
+                            color = palette.ink2,
+                        )
                     }
                 }
-            }) { Text(stringResource(if (testing) R.string.mcp_testing else R.string.mcp_test)) }
-            if (saved) SettingsValue(stringResource(R.string.settings_saved))
-        }
+            }
         }
     }
 }
@@ -147,28 +172,33 @@ fun McpScreen(graph: AppGraph, onBack: (() -> Unit)? = null) {
 private fun ServiceCard(server: CatalogServer, selection: McpSelection, status: ServerStatus?, onChange: (McpSelection) -> Unit) {
     val enabled = server.id in selection.enabled
     val uri = LocalUriHandler.current
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(Space.lg), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+    val palette = LocalXiaomanPalette.current
+    Surface(
+        Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(Radius.md),
+        color = palette.surfaceLow,
+    ) {
+        Column(Modifier.padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Space.sm),
+            ) {
                 Column(Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(server.title, style = MaterialTheme.typography.bodyLarge, color = LocalXiaomanPalette.current.ink)
+                    Text(server.title, style = MaterialTheme.typography.titleSmall, color = palette.ink)
+                    Surface(shape = RoundedCornerShape(Radius.sm), color = palette.accentSoft) {
                         Text(
                             stringResource(if (server.official) R.string.mcp_official else R.string.mcp_community),
+                            modifier = Modifier.padding(horizontal = Space.sm, vertical = Space.xs),
                             style = MaterialTheme.typography.labelSmall,
-                            color = LocalXiaomanPalette.current.ink3,
+                            color = palette.accentOnSoft,
                         )
                     }
-                    Text(
-                        server.description,
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Normal),
-                        color = LocalXiaomanPalette.current.ink3,
-                    )
                 }
                 XiaomanSwitch(checked = enabled) { on ->
                     onChange(selection.copy(enabled = if (on) selection.enabled + server.id else selection.enabled - server.id))
                 }
             }
+            Text(server.description, style = MaterialTheme.typography.bodySmall, color = palette.ink2)
             if (enabled) {
                 server.keys.forEach { key ->
                     OutlinedTextField(
@@ -195,33 +225,46 @@ private fun ServiceCard(server: CatalogServer, selection: McpSelection, status: 
 
 @Composable
 private fun StatusLine(status: ServerStatus) {
-    if (status.connected) {
-        Text(stringResource(R.string.mcp_connected, status.toolCount), style = MaterialTheme.typography.labelMedium,
-            color = LocalXiaomanPalette.current.online)
-    } else {
-        Text(stringResource(R.string.mcp_failed, status.error ?: "?"), style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.error)
+    val palette = LocalXiaomanPalette.current
+    Surface(
+        shape = RoundedCornerShape(Radius.sm),
+        color = if (status.connected) palette.accentSoft else palette.errorContainer,
+        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+    ) {
+        Text(
+            if (status.connected) stringResource(R.string.mcp_connected, status.toolCount)
+            else stringResource(R.string.mcp_failed, status.error ?: "?"),
+            modifier = Modifier.padding(horizontal = Space.sm, vertical = Space.xs),
+            style = MaterialTheme.typography.bodySmall,
+            color = if (status.connected) palette.accentOnSoft else palette.onErrorContainer,
+        )
     }
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun CustomServers(selection: McpSelection, status: Map<String, ServerStatus>, onChange: (McpSelection) -> Unit) {
     var title by remember { mutableStateOf("") }
     var url by remember { mutableStateOf("") }
     var auth by remember { mutableStateOf("") }
     var confirm by remember { mutableStateOf(ConfirmPolicy.WRITES) }
     val problem = url.takeIf { it.isNotBlank() }?.let { McpCatalog.validateCustomUrl(it) }
+    val palette = LocalXiaomanPalette.current
 
     SettingsNote(stringResource(R.string.mcp_custom_hint))
     selection.custom.forEachIndexed { i, c ->
-        Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(Space.lg)) {
+        Surface(
+            Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(Radius.md),
+            color = palette.surfaceLow,
+        ) {
+            Column(Modifier.padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(c.title.ifBlank { c.url }, style = MaterialTheme.typography.bodyLarge)
                         Text(c.url.substringBefore('?'), style = MaterialTheme.typography.labelMedium.copy(
                             fontWeight = FontWeight.Normal,
-                        ), color = LocalXiaomanPalette.current.ink3)
+                        ), color = palette.ink2)
                     }
                     TextButton(onClick = { onChange(selection.copy(custom = selection.custom.filterIndexed { j, _ -> j != i })) }) {
                         Text(stringResource(R.string.mcp_remove))
@@ -243,7 +286,7 @@ private fun CustomServers(selection: McpSelection, status: Map<String, ServerSta
         visualTransformation = PasswordVisualTransformation(), singleLine = true, modifier = Modifier.fillMaxWidth(),
     )
     Text(stringResource(R.string.mcp_custom_confirm), style = MaterialTheme.typography.bodyMedium)
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
         listOf(
             ConfirmPolicy.WRITES to R.string.mcp_confirm_writes,
             ConfirmPolicy.ALL to R.string.mcp_confirm_all,

@@ -6,6 +6,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.FileOutputStream
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption.ATOMIC_MOVE
+import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import java.util.UUID
 
 /**
@@ -62,9 +66,22 @@ class FeedStore(private val dir: File) {
     private val imageDir = File(dir, IMAGE_DIR)
     private val _posts = MutableStateFlow<List<Post>>(emptyList())
     val posts: StateFlow<List<Post>> = _posts.asStateFlow()
+    private val _loadFailed = MutableStateFlow(false)
+    val loadFailed: StateFlow<Boolean> = _loadFailed.asStateFlow()
 
     init {
-        _posts.value = read()
+        val stored = read()
+        _posts.value = stored.orEmpty()
+        _loadFailed.value = stored == null
+    }
+
+    @Synchronized
+    fun retryLoad(): Boolean {
+        if (!_loadFailed.value) return true
+        val stored = read() ?: return false
+        _posts.value = stored
+        _loadFailed.value = false
+        return true
     }
 
     fun latest(): Post? = _posts.value.firstOrNull()
@@ -88,9 +105,7 @@ class FeedStore(private val dir: File) {
             source = source,
             memoryChecked = true,
         )
-        _posts.value = (listOf(post) + _posts.value).take(MAX_POSTS)
-        persist()
-        return post
+        return post.takeIf { commit((listOf(post) + _posts.value).take(MAX_POSTS)) }
     }
 
     /** 用户发的动态：进入时间线后立即等待自动抽取记忆。 */
@@ -107,33 +122,32 @@ class FeedStore(private val dir: File) {
             source = SOURCE_TEMPLATE,
             memoryChecked = false,
         )
-        _posts.value = (listOf(post) + _posts.value).take(MAX_POSTS)
-        persist()
-        return post
+        return post.takeIf { commit((listOf(post) + _posts.value).take(MAX_POSTS)) }
     }
 
     /** 点赞可来回切；计数不会掉到负数。自己和她发的动态都适用。 */
     @Synchronized
-    fun toggleLike(id: String) {
-        _posts.value = _posts.value.map {
-            if (it.id == id) it.copy(liked = !it.liked, likes = (it.likes + if (it.liked) -1 else 1).coerceAtLeast(0)) else it
-        }
-        persist()
+    fun toggleLike(id: String): Boolean {
+        val current = _posts.value
+        if (current.none { it.id == id }) return false
+        return commit(current.map {
+            if (it.id == id) {
+                it.copy(liked = !it.liked, likes = (it.likes + if (it.liked) -1 else 1).coerceAtLeast(0))
+            } else {
+                it
+            }
+        })
     }
 
     /** 她赞了你的动态；已经赞过就不再重复。 */
     @Synchronized
-    fun likeByHer(id: String) {
-        var changed = false
-        _posts.value = _posts.value.map {
-            if (it.id == id && !it.likedByHer) {
-                changed = true
-                it.copy(likedByHer = true, likes = it.likes + 1)
-            } else {
-                it
-            }
-        }
-        if (changed) persist()
+    fun likeByHer(id: String): Boolean {
+        val current = _posts.value
+        val post = current.firstOrNull { it.id == id } ?: return false
+        if (post.likedByHer) return true
+        return commit(current.map {
+            if (it.id == id) it.copy(likedByHer = true, likes = it.likes + 1) else it
+        })
     }
 
     /**
@@ -145,7 +159,7 @@ class FeedStore(private val dir: File) {
         val body = text.trim()
         if (body.isEmpty()) return null
         var updated: Post? = null
-        _posts.value = _posts.value.map { post ->
+        val next = _posts.value.map { post ->
             if (post.id == id) {
                 val parent = parentId?.let { pid -> post.comments.firstOrNull { it.id == pid } }
                 val rootId = parent?.let { it.parentId ?: it.id }
@@ -161,40 +175,52 @@ class FeedStore(private val dir: File) {
                 post
             }
         }
-        if (updated != null) persist()
-        return updated
+        return updated?.takeIf { commit(next) }
     }
 
     /** 记录本动态抽取到的记忆；空列表也要落 `memoryChecked`，避免反复调用模型。 */
     @Synchronized
-    fun setMemory(id: String, memoryIds: List<String>) {
-        _posts.value = _posts.value.map {
+    fun setMemory(id: String, memoryIds: List<String>): Boolean {
+        val current = _posts.value
+        if (current.none { it.id == id }) return false
+        return commit(current.map {
             if (it.id == id) it.copy(memoryIds = memoryIds.distinct(), memoryChecked = true) else it
-        }
-        persist()
+        })
     }
 
     /** 删除动态与它自己的图片；记忆不级联删除，只留下断链。 */
     @Synchronized
-    fun delete(id: String) {
-        val post = _posts.value.firstOrNull { it.id == id } ?: return
-        _posts.value = _posts.value.filterNot { it.id == id }
+    fun delete(id: String): Boolean {
+        if (_loadFailed.value) return false
+        val current = _posts.value
+        val post = current.firstOrNull { it.id == id } ?: return true
+        val next = current.filterNot { it.id == id }
+        if (!commit(next)) return false
+        val stillUsed = next.flatMap { it.images }.mapNotNull { path ->
+            runCatching { File(path).canonicalFile }.getOrNull()
+        }.toSet()
         post.images.forEach { path ->
-            runCatching { File(path).takeIf { it.parentFile?.canonicalFile == imageDir.canonicalFile }?.delete() }
+            runCatching {
+                val image = File(path)
+                val canonical = image.canonicalFile
+                val ownedDir = imageDir.canonicalFile
+                if (image.parentFile?.canonicalFile == ownedDir &&
+                    canonical.parentFile == ownedDir && canonical !in stillUsed
+                ) {
+                    image.delete()
+                }
+            }
         }
-        persist()
+        return true
     }
 
     @Synchronized
-    fun clear() {
-        _posts.value = emptyList()
-        persist()
-    }
+    fun clear(): Boolean = commit(emptyList())
 
-    private fun read(): List<Post> {
-        if (!file.isFile) return emptyList()
+    private fun read(): List<Post>? {
         return try {
-            val array = JSONObject(file.readText()).optJSONArray("posts") ?: JSONArray()
+            if (Files.notExists(file.toPath())) return emptyList()
+            val array = JSONObject(file.readText()).getJSONArray("posts")
             (0 until array.length()).mapNotNull { i ->
                 val o = array.optJSONObject(i) ?: return@mapNotNull null
                 val text = o.optString("text")
@@ -236,15 +262,18 @@ class FeedStore(private val dir: File) {
                 )
             }.sortedByDescending { it.at }
         } catch (e: Exception) {
-            emptyList()
+            null
         }
     }
 
-    private fun persist() {
+    /** Publishes the next timeline only after replacing the old on-disk snapshot. */
+    private fun commit(posts: List<Post>): Boolean {
+        if (_loadFailed.value) return false
+        var temp: File? = null
         try {
-            dir.mkdirs()
+            if (!dir.isDirectory && !dir.mkdirs() && !dir.isDirectory) return false
             val array = JSONArray()
-            _posts.value.forEach { p ->
+            posts.forEach { p ->
                 val comments = JSONArray()
                 p.comments.forEach { c ->
                     comments.put(
@@ -272,9 +301,20 @@ class FeedStore(private val dir: File) {
                         .put("memoryChecked", p.memoryChecked),
                 )
             }
-            file.writeText(JSONObject().put("posts", array).toString())
+            val snapshot = JSONObject().put("posts", array).toString().toByteArray(Charsets.UTF_8)
+            val staging = File.createTempFile("feed-posts-", ".tmp", dir)
+            temp = staging
+            FileOutputStream(staging).use { stream ->
+                stream.write(snapshot)
+                stream.fd.sync()
+            }
+            Files.move(staging.toPath(), file.toPath(), ATOMIC_MOVE, REPLACE_EXISTING)
         } catch (e: Exception) {
-            // 写盘失败只影响下次启动；内存里仍可用。
+            return false
+        } finally {
+            temp?.let { staging -> runCatching { staging.delete() } }
         }
+        _posts.value = posts
+        return true
     }
 }

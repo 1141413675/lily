@@ -4,10 +4,9 @@ import android.util.Log
 import dev.xiaoman.api.ChatMessage
 import dev.xiaoman.api.ChatRequest
 import dev.xiaoman.api.ModelRole
-import dev.xiaoman.app.Notifier
+import dev.xiaoman.app.settings.AppSettings
 import dev.xiaoman.app.session.AgentSession
 import dev.xiaoman.app.settings.RelationSettings
-import dev.xiaoman.app.settings.SettingsStore
 import dev.xiaoman.llm.LlmClientFactory
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -26,9 +25,9 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 class ProactiveEngine(
     private val store: RelationshipStore,
-    private val settings: SettingsStore,
+    private val settings: () -> AppSettings,
     private val session: AgentSession,
-    private val notifier: Notifier,
+    private val notify: (String) -> Unit,
     private val llm: LlmClientFactory,
     private val scope: CoroutineScope,
     private val uiVisible: StateFlow<Boolean>,
@@ -60,14 +59,15 @@ class ProactiveEngine(
     private suspend fun runOnce() {
         val now = clock()
         val relationship = store.load()
-        val config = settings.current.relation
+        val current = settings()
+        val config = current.relation
         val outcome = ProactiveDecision.evaluate(now, relationship, config, session.busy.value)
         val diagnosis = outcome.diagnosis
         val trigger = outcome.trigger ?: run {
             record(diagnosis, "no-send:${diagnosis.blocker ?: "no-trigger"}")
             return
         }
-        val text = compose(trigger, relationship, config)
+        val text = compose(trigger, relationship, current)
         ProactiveGuard.check(text)?.let { rule ->
             record(diagnosis, "rejected:$rule", text)
             return
@@ -75,6 +75,10 @@ class ProactiveEngine(
         // A task may have started while the model was composing; do not cut into it.
         if (session.busy.value) {
             record(diagnosis, "aborted:busy", text)
+            return
+        }
+        if (!settings().relation.proactive) {
+            record(diagnosis, "aborted:disabled")
             return
         }
         store.markProactive(
@@ -85,7 +89,7 @@ class ProactiveEngine(
         )
         session.postAssistant(text)
         val notified = !uiVisible.value
-        if (notified) notifier.showProactive(text)
+        if (notified) notify(text)
         record(diagnosis, if (notified) "sent+notified" else "sent", text)
     }
 
@@ -131,14 +135,16 @@ class ProactiveEngine(
     private fun String.escape(): String =
         replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "")
 
-    private suspend fun compose(trigger: ProactiveTrigger, relationship: Relationship, config: RelationSettings): String {
+    private suspend fun compose(trigger: ProactiveTrigger, relationship: Relationship, current: AppSettings): String {
+        val config = current.relation
         val fallback = RelationshipPrompt.fallback(trigger, config)
-        val chat = settings.current.chat
+        val chat = current.chat
         if (!chat.configured) return fallback
         return try {
             val client = llm.create(chat.toModelConfig(ModelRole.CHAT))
             val response = withTimeout(COMPOSE_TIMEOUT_MS) {
-                client.complete(ChatRequest(listOf(ChatMessage.system(RelationshipPrompt.opening(relationship, config, trigger, name = settings.current.persona.nameOr(appName))))))
+                val prompt = RelationshipPrompt.opening(relationship, config, trigger, name = current.persona.nameOr(appName))
+                client.complete(ChatRequest(listOf(ChatMessage.system(prompt))))
             }
             response.text.trim().takeIf { ProactiveGuard.check(it) == null } ?: fallback
         } catch (e: TimeoutCancellationException) {

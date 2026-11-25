@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Debug builds only: allow plain ws:// so the real-time call channel can be exercised
-  against a local mock server. Release builds keep the platform default (cleartext off),
-  which is correct because the real provider endpoint is wss://.
+  against a local mock server. Release builds scope cleartext to loopback endpoints.
 -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="true" />

@@ -5,7 +5,10 @@ import dev.xiaoman.app.media.SceneryStore
 import dev.xiaoman.app.session.ChatItem
 import dev.xiaoman.app.settings.AppSettings
 import dev.xiaoman.app.settings.ImageSettings
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -113,7 +116,7 @@ class ImageGenerationTest {
         var generates = 0
         val chatImages = ChatImages(
             scope = this,
-            settings = { AppSettings(image = ImageSettings(enabled = true, dailyLimit = 3)) },
+            settings = { AppSettings(image = ImageSettings(enabled = true, dailyLimit = 1)) },
             items = { listOf(ChatItem.AssistantImage(1, old.absolutePath)) },
             portraitFile = { null },
             store = ChatImageStore(File(root, "images")),
@@ -139,12 +142,19 @@ class ImageGenerationTest {
         assertTrue(prompts.single().contains("想看看你现在在喝什么"))
         assertEquals(1, posted.size)
         assertTrue(File(posted.single()).isFile)
+
+        assertEquals(ChatImages.ShareResult.LIMIT_REACHED, chatImages.share("再发一张照片", ""))
+        assertEquals(ChatImages.ShareResult.IGNORED, chatImages.share("我今天拍的照片很好看", ""))
+        assertEquals(ChatImages.ShareResult.IGNORED, chatImages.share("别给我发张照片", ""))
+        assertEquals(1, generates)
     }
 
     @Test
-    fun failedGenerationAndEmptyLibraryStaySilent() = runBlocking {
+    fun explicitImageFailureCanRetryWithoutRepostingTheUserMessage() = runBlocking {
         val root = createTempDirectory("chat-images").toFile()
         val posted = mutableListOf<String>()
+        val firstAttempt = CompletableDeferred<Unit>()
+        var attempts = 0
         val chatImages = ChatImages(
             scope = this,
             settings = { AppSettings(image = ImageSettings(enabled = true, dailyLimit = 3)) },
@@ -153,12 +163,29 @@ class ImageGenerationTest {
             store = ChatImageStore(File(root, "images")),
             scenery = SceneryStore(File(root, "scenery")),
             post = { posted += it },
-            generate = { _, _ -> null },
+            generate = { _, _ ->
+                if (++attempts == 1) {
+                    firstAttempt.await()
+                    null
+                } else {
+                    byteArrayOf(1, 2, 3)
+                }
+            },
             promptFor = { _, _ -> "prompt" },
         )
 
-        chatImages.share("给我看看你在干嘛", "")
-        assertTrue(posted.isEmpty())
+        withTimeout(5_000) {
+            chatImages.afterReply("给我看看你在干嘛", "")
+            chatImages.feedback.first { it == ImageRequestFeedback.Generating }
+            firstAttempt.complete(Unit)
+            chatImages.feedback.first { it is ImageRequestFeedback.Failed }
+            assertTrue(posted.isEmpty())
+
+            chatImages.retry()
+            chatImages.feedback.first { it == null }
+            assertEquals(2, attempts)
+            assertEquals(1, posted.size)
+        }
     }
 
     /** 只回一次 JSON 的最小 HTTP 桩，避免额外测试依赖。 */

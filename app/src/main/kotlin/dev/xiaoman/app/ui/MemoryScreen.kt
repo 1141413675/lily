@@ -1,11 +1,11 @@
 package dev.xiaoman.app.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -27,19 +26,23 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -77,6 +80,7 @@ import dev.xiaoman.app.R
 import dev.xiaoman.app.dream.DreamDay
 import dev.xiaoman.app.dream.DreamTypes
 import dev.xiaoman.app.feed.FeedMemory
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -168,17 +172,40 @@ class MemoryViewModel(
 }
 
 @Composable
-fun MemoryScreen(
-    graph: AppGraph,
+internal fun MemoryScreen(
+    conversation: AppGraph.Conversation,
     focusPermalink: String? = null,
     onFocusConsumed: () -> Unit = {},
     onDetailChange: (Boolean) -> Unit = {},
     onBack: (() -> Unit)? = null,
-    onOpenDream: () -> Unit = {},
+    onOpenDream: (() -> Unit)? = null,
 ) {
-    val vm = viewModel { MemoryViewModel(graph.memory) { graph.dreamStore.days() } }
+    val vm = viewModel(key = "memory-${conversation.id}") {
+        MemoryViewModel(conversation.memory) { conversation.dreamStore.days() }
+    }
     val state by vm.state.collectAsStateWithLifecycle()
+    val settings by conversation.effectiveSettings.collectAsStateWithLifecycle()
+    val embedding = settings.memoryEmbedding
+    val memorySearch = conversation.memorySearch
+    val progress by memorySearch.progress.collectAsStateWithLifecycle()
+    var searchHits by remember(conversation.id, state.query, embedding) { mutableStateOf(emptySet<String>()) }
+    val personaName = settings.persona.nameOr(stringResource(R.string.app_name))
+    val pronoun = settings.persona.pronoun
     LaunchedEffect(Unit) { vm.refresh() }
+    LaunchedEffect(embedding) { memorySearch.prepare() }
+    LaunchedEffect(state.query, embedding, progress.indexed) {
+        val query = state.query.trim()
+        if (embedding.active && query.length >= 2) {
+            delay(350)
+            searchHits = try {
+                memorySearch.search(query, limit = 30).mapTo(mutableSetOf()) { it.permalink }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                emptySet()
+            }
+        }
+    }
     LaunchedEffect(focusPermalink) {
         if (focusPermalink != null) {
             vm.open(focusPermalink)
@@ -186,33 +213,52 @@ fun MemoryScreen(
         }
     }
     val note = state.open
+    BackHandler(enabled = onBack != null || note != null) {
+        if (note != null) vm.close() else onBack?.invoke()
+    }
     // 详情是浮层：告诉外层收起底栏；离开时复位。
     LaunchedEffect(note != null) { onDetailChange(note != null) }
     DisposableEffect(Unit) { onDispose { onDetailChange(false) } }
-    MemoryTimeline(state, vm, onBack, onOpenDream)
+    val indexStatus = if (embedding.active) {
+        when {
+            progress.running && progress.indexed == 0 -> "正在构建语义索引"
+            progress.unavailable -> "向量服务暂时不可用，仍可用关键词查找"
+            progress.total == 0 -> "有新记忆后会建立语义索引"
+            else -> "语义索引 · ${progress.indexed}/${progress.total} 段"
+        }
+    } else null
+    MemoryTimeline(state, vm, personaName, pronoun, onBack, onOpenDream, searchHits, indexStatus)
     if (note != null) {
         NoteDetailSheet(
             note = note,
             inferred = isInferred(note),
+            pronoun = pronoun,
             onDismiss = vm::close,
             onForget = { vm.forget(note) },
         )
     }
 }
 
-/** 顶栏一句「她记得 / N 件」，下面一条按月份分组的时间线。 */
+/** 顶栏显示角色昵称和记忆数量，下面按月份分组。 */
 @Composable
 private fun MemoryTimeline(
     state: MemoryState,
     vm: MemoryViewModel,
+    personaName: String,
+    pronoun: String,
     onBack: (() -> Unit)?,
-    onOpenDream: () -> Unit,
+    onOpenDream: (() -> Unit)?,
+    searchHits: Set<String>,
+    indexStatus: String?,
 ) {
     val palette = LocalXiaomanPalette.current
-    val entries = remember(state.notes, state.dreams, state.query) {
+    val entries = remember(state.notes, state.dreams, state.query, searchHits) {
         val q = state.query.trim()
         val notes = state.notes
-            .filter { q.isEmpty() || it.title.contains(q, ignoreCase = true) || it.body.contains(q, ignoreCase = true) }
+            .filter {
+                q.isEmpty() || it.permalink in searchHits ||
+                    it.title.contains(q, ignoreCase = true) || it.body.contains(q, ignoreCase = true)
+            }
             .map { TimelineEntry.Memory(it, isInferred(it)) }
         val dreams = state.dreams.map { TimelineEntry.Dream(it, dreamLine(it)) }
         (notes + dreams).sortedByDescending { it.at }
@@ -234,9 +280,9 @@ private fun MemoryTimeline(
                         modifier = Modifier.size(IconSize.lg),
                     )
                 }
-                Column(Modifier.padding(start = Space.sm)) {
+                Column(Modifier.weight(1f).padding(start = Space.sm, top = Space.xs, bottom = Space.xs)) {
                     Text(
-                        stringResource(R.string.memory_title),
+                        stringResource(R.string.memory_title, personaName),
                         style = MaterialTheme.typography.titleLarge,
                     )
                     SettingsNote(stringResource(R.string.memory_count, state.notes.size))
@@ -245,7 +291,7 @@ private fun MemoryTimeline(
         } else {
             Column(Modifier.fillMaxWidth().padding(horizontal = Space.page, vertical = Space.md)) {
                 Text(
-                    stringResource(R.string.memory_title),
+                    stringResource(R.string.memory_title, personaName),
                     style = MaterialTheme.typography.titleLarge,
                 )
                 SettingsNote(stringResource(R.string.memory_count, state.notes.size))
@@ -256,6 +302,11 @@ private fun MemoryTimeline(
             onQueryChange = vm::setQuery,
             modifier = Modifier.padding(horizontal = Space.page).padding(top = Space.md, bottom = Space.sm),
         )
+        if (indexStatus != null) {
+            Box(Modifier.fillMaxWidth().padding(horizontal = Space.page, vertical = Space.xs)) {
+                SettingsNote(indexStatus)
+            }
+        }
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when {
                 state.loading -> MemorySkeleton()
@@ -264,15 +315,17 @@ private fun MemoryTimeline(
                     onClick = vm::refresh,
                 )
                 entries.isEmpty() -> CenterHint(
-                    text = stringResource(
-                        if (state.query.isBlank()) R.string.memory_empty_timeline else R.string.memory_no_hits,
-                    ),
+                    text = if (state.query.isBlank()) {
+                        stringResource(R.string.memory_empty_timeline, pronoun)
+                    } else {
+                        stringResource(R.string.memory_no_hits)
+                    },
                 )
-                else -> TimelineList(state, groups, vm)
+                else -> TimelineList(state, groups, vm, pronoun)
             }
         }
-        if (lastNight > 0 && !state.loading && !state.failed) {
-            NightEntry(count = lastNight, onClick = onOpenDream)
+        if (onOpenDream != null && lastNight > 0 && !state.loading && !state.failed) {
+            NightEntry(count = lastNight, pronoun = pronoun, onClick = onOpenDream)
         }
     }
 }
@@ -282,12 +335,12 @@ private fun MemorySearch(query: String, onQueryChange: (String) -> Unit, modifie
     val palette = LocalXiaomanPalette.current
     val focus = LocalFocusManager.current
     Surface(
-        shape = RoundedCornerShape(18.dp),
-        color = palette.surface2,
-        modifier = modifier.fillMaxWidth().height(36.dp),
+        shape = RoundedCornerShape(Radius.md),
+        color = palette.surface,
+        modifier = modifier.fillMaxWidth(),
     ) {
         Row(
-            Modifier.fillMaxSize().padding(start = Space.lg, end = Space.xs),
+            Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(start = Space.lg, end = Space.xs),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(Icons.Outlined.Search, contentDescription = null, tint = palette.ink3, modifier = Modifier.size(16.dp))
@@ -314,7 +367,7 @@ private fun MemorySearch(query: String, onQueryChange: (String) -> Unit, modifie
                 modifier = Modifier.weight(1f),
             )
             if (query.isNotEmpty()) {
-                IconButton(onClick = { onQueryChange("") }, modifier = Modifier.size(30.dp)) {
+                IconButton(onClick = { onQueryChange("") }, modifier = Modifier.size(SizeTokens.touchTarget)) {
                     Icon(
                         Icons.Outlined.Close,
                         contentDescription = stringResource(R.string.clear),
@@ -329,7 +382,12 @@ private fun MemorySearch(query: String, onQueryChange: (String) -> Unit, modifie
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun TimelineList(state: MemoryState, groups: Map<String, List<TimelineEntry>>, vm: MemoryViewModel) {
+private fun TimelineList(
+    state: MemoryState,
+    groups: Map<String, List<TimelineEntry>>,
+    vm: MemoryViewModel,
+    pronoun: String,
+) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = Space.xl)) {
         groups.forEach { (month, rows) ->
             stickyHeader(key = "month-$month") { MonthHeader(month) }
@@ -343,9 +401,10 @@ private fun TimelineList(state: MemoryState, groups: Map<String, List<TimelineEn
                             is TimelineEntry.Memory -> NoteRow(
                                 note = entry.note,
                                 inferred = entry.inferred,
+                                pronoun = pronoun,
                                 onClick = { vm.open(entry.note.permalink) },
                             )
-                            is TimelineEntry.Dream -> DreamRow(entry.text)
+                            is TimelineEntry.Dream -> DreamRow(entry.text, pronoun)
                         }
                     }
                 }
@@ -365,12 +424,12 @@ private fun MemoryAppear(content: @Composable () -> Unit) {
     ) { content() }
 }
 
-/** 粘性月份：上方 24、下方 8，一行 11.5 灰字；不画横线，靠留白和字重分组。 */
+/** 粘性月份标题，滚动时保留时间分组。 */
 @Composable
 private fun MonthHeader(month: String) {
     val palette = LocalXiaomanPalette.current
-    Column(Modifier.fillMaxWidth().background(palette.bg).padding(start = Space.page, end = Space.page, top = 24.dp, bottom = 8.dp)) {
-        Text(month, style = MaterialTheme.typography.labelMedium, color = palette.ink2)
+    Column(Modifier.fillMaxWidth().background(palette.bg).padding(start = Space.page, end = Space.page, top = Space.xl, bottom = Space.sm)) {
+        Text(month, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = palette.ink2)
     }
 }
 
@@ -390,9 +449,9 @@ private fun TimelineRail(accent: Boolean) {
     }
 }
 
-/** 一条记忆：一句短话，来源作为注脚落在第二行右对齐。 */
+/** 一条记忆，来源与正文左对齐，便于连续浏览。 */
 @Composable
-private fun NoteRow(note: Note, inferred: Boolean, onClick: () -> Unit) {
+private fun NoteRow(note: Note, inferred: Boolean, pronoun: String, onClick: () -> Unit) {
     val palette = LocalXiaomanPalette.current
     Row(
         Modifier.fillMaxWidth().height(IntrinsicSize.Min).clickable(onClick = onClick),
@@ -408,13 +467,12 @@ private fun NoteRow(note: Note, inferred: Boolean, onClick: () -> Unit) {
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                stringResource(if (inferred) R.string.memory_source_her else R.string.memory_source_user),
+                stringResource(if (inferred) R.string.memory_source_her else R.string.memory_source_user, pronoun),
                 style = MaterialTheme.typography.labelSmall.copy(
                     fontSize = TypeScale.micro.size,
                     lineHeight = TypeScale.micro.line,
                 ),
                 color = palette.ink3,
-                textAlign = TextAlign.End,
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
             )
         }
@@ -423,7 +481,7 @@ private fun NoteRow(note: Note, inferred: Boolean, onClick: () -> Unit) {
 
 /** 做梦结果：浅紫底的小卡，和正文拉开一层，不抢句子的位置。 */
 @Composable
-private fun DreamRow(text: String) {
+private fun DreamRow(text: String, pronoun: String) {
     val palette = LocalXiaomanPalette.current
     Row(
         Modifier.fillMaxWidth().height(IntrinsicSize.Min),
@@ -453,7 +511,7 @@ private fun DreamRow(text: String) {
                     )
                 }
                 Text(
-                    stringResource(R.string.memory_dream_source),
+                    stringResource(R.string.memory_dream_source, pronoun),
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontSize = TypeScale.micro.size,
                         lineHeight = TypeScale.micro.line,
@@ -467,21 +525,24 @@ private fun DreamRow(text: String) {
     }
 }
 
-/** 底部一行「昨晚，她想起 N 件事」，只在有整理结果时出现。 */
+/** 只在有整理结果时显示入口。 */
 @Composable
-private fun NightEntry(count: Int, onClick: () -> Unit) {
+private fun NightEntry(count: Int, pronoun: String, onClick: () -> Unit) {
     val palette = LocalXiaomanPalette.current
     Surface(
         shape = RoundedCornerShape(Radius.md),
-        color = palette.surface2,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = Space.page, vertical = Space.md).height(56.dp),
+        color = palette.surface,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = Space.page, vertical = Space.md),
     ) {
         Row(
-            Modifier.fillMaxSize().clickable(onClick = onClick).padding(start = Space.lg, end = Space.md),
+            Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable(onClick = onClick)
+                .padding(horizontal = Space.lg, vertical = Space.sm),
+            horizontalArrangement = Arrangement.spacedBy(Space.sm),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            Icon(Icons.Filled.DarkMode, contentDescription = null, tint = palette.accent, modifier = Modifier.size(IconSize.md))
             Text(
-                stringResource(R.string.memory_last_night, count),
+                stringResource(R.string.memory_last_night, pronoun, count),
                 style = MaterialTheme.typography.bodySmall,
                 color = palette.ink,
                 modifier = Modifier.weight(1f),
@@ -500,12 +561,22 @@ private fun NightEntry(count: Int, onClick: () -> Unit) {
 private fun CenterHint(text: String, onClick: (() -> Unit)? = null) {
     val palette = LocalXiaomanPalette.current
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(
-            text,
-            style = MaterialTheme.typography.bodySmall,
-            color = palette.ink3,
-            modifier = (if (onClick != null) Modifier.tapTarget().clickable { onClick() } else Modifier).padding(Space.lg),
-        )
+        Column(
+            Modifier.padding(horizontal = Space.page),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(Space.sm),
+        ) {
+            Box(Modifier.size(48.dp).background(palette.accentSoft, CircleShape), contentAlignment = Alignment.Center) {
+                Icon(Icons.AutoMirrored.Outlined.MenuBook, contentDescription = null, tint = palette.accentOnSoft)
+            }
+            if (onClick != null) {
+                TextButton(onClick = onClick, modifier = Modifier.tapTarget()) {
+                    Text(text, textAlign = TextAlign.Center)
+                }
+            } else {
+                Text(text, style = MaterialTheme.typography.bodyMedium, color = palette.ink2, textAlign = TextAlign.Center)
+            }
+        }
     }
 }
 
@@ -529,6 +600,7 @@ private fun MemorySkeleton() {
 private fun NoteDetailSheet(
     note: Note,
     inferred: Boolean,
+    pronoun: String,
     onDismiss: () -> Unit,
     onForget: () -> Unit,
 ) {
@@ -544,38 +616,47 @@ private fun NoteDetailSheet(
     ) {
         Column(
             Modifier.fillMaxWidth().fillMaxHeight(0.7f)
-                .padding(start = Space.page, end = Space.page, top = Space.block)
+                .padding(start = Space.page, end = Space.page, top = Space.sm)
                 .navigationBarsPadding(),
         ) {
-            SelectionContainer {
-                Text(
-                    chatRichText(content),
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontSize = TypeScale.headline.size,
-                        lineHeight = TypeScale.headline.line,
-                    ),
-                    color = palette.ink,
-                )
+            Row(
+                Modifier.fillMaxWidth().padding(bottom = Space.sm),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
+                    Text(
+                        stringResource(if (inferred) R.string.memory_source_her else R.string.memory_source_user, pronoun),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = palette.accent,
+                    )
+                    Text(dateLabel(note.updatedAtMillis), style = MaterialTheme.typography.labelMedium, color = palette.ink3)
+                }
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.cancel), tint = palette.ink2)
+                }
             }
-            Row(Modifier.fillMaxWidth().padding(top = Space.lg), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    dateLabel(note.updatedAtMillis),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = palette.ink3,
-                )
-                Spacer(Modifier.weight(1f))
-                Text(
-                    stringResource(if (inferred) R.string.memory_source_her else R.string.memory_source_user),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = palette.ink3,
-                )
+            Column(
+                Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())
+                    .padding(top = Space.md, bottom = Space.lg),
+            ) {
+                SelectionContainer {
+                    Text(
+                        chatRichText(content),
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontSize = TypeScale.headline.size,
+                            lineHeight = TypeScale.headline.line,
+                        ),
+                        color = palette.ink,
+                    )
+                }
             }
-            Spacer(Modifier.weight(1f))
+            HorizontalDivider(color = palette.line)
             if (confirm) {
                 Text(
                     stringResource(R.string.memory_forget_confirm_line),
                     style = MaterialTheme.typography.bodySmall,
                     color = palette.ink2,
+                    modifier = Modifier.padding(top = Space.sm),
                 )
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     TextButton(onClick = { confirm = false }, modifier = Modifier.tapTarget()) {
@@ -597,7 +678,7 @@ private fun NoteDetailSheet(
     }
 }
 
-/** 她自己看出来的：来自动态、做梦归纳或长期规则；其余算你告诉她的。 */
+/** 来自动态、做梦归纳或长期规则的记忆属于角色推断。 */
 private fun isInferred(note: Note): Boolean =
     note.extraFrontmatter[FeedMemory.SOURCE_KEY] != null ||
         note.extraFrontmatter["dream"] != null ||

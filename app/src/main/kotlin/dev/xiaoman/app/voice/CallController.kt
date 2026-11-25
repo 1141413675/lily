@@ -8,7 +8,7 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import dev.xiaoman.app.R
 import dev.xiaoman.app.relationship.RelationshipStore
-import dev.xiaoman.app.settings.SettingsStore
+import dev.xiaoman.app.settings.AppSettings
 import dev.xiaoman.app.session.AgentSession
 import dev.xiaoman.app.session.CallOutcome
 import dev.xiaoman.app.session.ChatItem
@@ -79,16 +79,16 @@ data class CallState(
 class CallController(
     private val context: Context,
     private val session: AgentSession,
-    private val settings: SettingsStore,
+    private val settings: () -> AppSettings,
     private val scope: CoroutineScope,
     private val relationship: RelationshipStore,
     private val logs: CallLogStore,
     private val random: Random = Random.Default,
     private val clock: () -> Long = System::currentTimeMillis,
     private val zone: ZoneId = ZoneId.systemDefault(),
+    private val canStart: () -> Boolean = { true },
 ) {
     private val recorder = AecRecorder(context)
-    private val speaker = Speaker(File(context.cacheDir, "voice").apply { mkdirs() })
     private val api = VoiceApi()
     private val engine = TtsEngine(api)
     private val sounds = CallSounds(context)
@@ -96,9 +96,12 @@ class CallController(
     private val _state = MutableStateFlow(CallState())
     val state: StateFlow<CallState> = _state.asStateFlow()
 
-    /** 0..1 的当前音量，只给通话页大圆起伏用；不参与轮次、路由或配置。 */
+    /** 0..1 的当前输入或播放音量，只用于通话动效。 */
     private val _level = MutableStateFlow(0f)
     val level: StateFlow<Float> = _level.asStateFlow()
+    private val speaker = Speaker(File(context.cacheDir, "voice").apply { mkdirs() }, onLevel = {
+        if (_state.value.phase == CallState.Phase.SPEAKING) _level.value = it
+    })
 
     @Volatile private var muted = false
 
@@ -113,9 +116,6 @@ class CallController(
     private var pendingSpeech: String? = null
     private var currentMood = AgentMood.CALM
 
-    /** 她主动打来：标记后由下次 [startCall] 按来电处理。 */
-    @Volatile private var incomingPending = false
-
     /** 本通电话的逐句往来与用户录音序号，只写进独立通话明细，不进聊天列表。 */
     private val turns = mutableListOf<CallTurn>()
     private var turnSerial = 0
@@ -129,30 +129,31 @@ class CallController(
     /** 最近几句播报文本；免提与实时通道都写到这里，只用于自回声比对。 */
     private val spoken = SpokenBaseline()
 
-    /** 她打过来：下一次 [startCall] 走来电流程——先响铃，等用户接听，不自动接通。 */
-    fun ringIncoming() {
-        incomingPending = true
-    }
+    /** 本地来电等用户接听后才进入音频会话。 */
+    fun ringIncoming(opening: String? = null): Boolean = startRinging(incoming = true, opening = opening)
 
     /**
      * 拨号：先振铃，只按心情决定等待时长与是否接听。
      * 免打扰只约束主动消息，不拦来电，也不按时段自动挂断。
      */
-    fun startCall() {
-        if (_state.value.active) return
-        val incoming = incomingPending.also { incomingPending = false }
-        val s = settings.current
+    fun startCall() { startRinging(incoming = false, opening = null) }
+
+    private fun startRinging(incoming: Boolean, opening: String?): Boolean {
+        if (_state.value.active || !canStart()) return false
+        val s = settings()
         // 默认走轮次通话，只需要识别与朗读；实时通道要显式打开且已配置才用。
         val canCall = (s.asr.configured && s.tts.configured) || (s.realtimeEnabled && s.realtime.configured)
         if (!canCall) {
             _state.value = CallState(message = "需要先在设置里填写语音识别与语音朗读。")
-            return
+            return false
         }
         val now = clock()
         callStartedAt = now
         connectedAt = 0
         recorded = false
         muted = false
+        currentMood = AgentMood.CALM
+        pendingSpeech = opening
         turns.clear()
         turnSerial = 0
         _level.value = 0f
@@ -165,13 +166,17 @@ class CallController(
             dialStartedAt = now,
         )
         job?.cancel()
-        // 拨出即响回铃，接通或挂断时停；静音模式下 CallSounds 自己跳过。
-        sounds.startRingback()
-        // 前台服务让通话切到后台也不断线，状态栏保留持续通知；挂断时停掉。
-        startCallService(now)
-        job = scope.launch {
-            val reading = runCatching { refreshMood(now) }
-                .getOrElse { MoodReading(AgentMood.CALM, "暂时读不到关系档案") }
+        if (incoming) sounds.startIncoming() else sounds.startRingback()
+        job = scope.launch(Dispatchers.Main.immediate) {
+            val reading = try {
+                withContext(Dispatchers.IO) { refreshMood(now) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                MoodReading(AgentMood.CALM, "暂时读不到关系档案")
+            }
+            if (!_state.value.active || _state.value.dialStartedAt != now ||
+                _state.value.phase != CallState.Phase.RINGING) return@launch
             currentMood = reading.mood
             _state.value = _state.value.copy(mood = reading.mood)
             if (incoming) {
@@ -185,6 +190,7 @@ class CallController(
             if (!_state.value.active || _state.value.phase != CallState.Phase.RINGING) return@launch
             if (plan.answer) connect(reading.mood) else miss(reading)
         }
+        return true
     }
 
     /** 结束通话：能接通的记录时长，振铃中挂断记「已取消」。 */
@@ -201,7 +207,7 @@ class CallController(
 
     /** 振铃中点「接通」：跳过等待，立刻进入通话。 */
     fun connectNow() {
-        if (!_state.value.active || _state.value.phase != CallState.Phase.RINGING) return
+        if (!_state.value.active || !_state.value.incoming || _state.value.phase != CallState.Phase.RINGING) return
         job?.cancel()
         connect(currentMood)
     }
@@ -232,7 +238,7 @@ class CallController(
         realtime?.setMuted(value)
         if (value) {
             recorder.stop()?.delete()
-            _level.value = 0f
+            if (_state.value.phase != CallState.Phase.SPEAKING) _level.value = 0f
         }
     }
 
@@ -248,21 +254,6 @@ class CallController(
         recorder.setEchoCancellation(on)
         _state.value = _state.value.copy(speakerOn = on)
         Log.i(TAG, "call audio: speaker=$on aec=$on")
-    }
-
-    /** 聊天里选了「发起通话」：先振铃接通，再把这句回复读出来，然后继续免提听。 */
-    fun playReply(text: String) {
-        if (text.isBlank()) return
-        if (_state.value.active) {
-            interrupt()
-            return
-        }
-        if (!settings.current.tts.configured) {
-            _state.value = _state.value.copy(message = "还没有配置语音朗读，去设置里填写。")
-            return
-        }
-        pendingSpeech = text
-        startCall()
     }
 
     // ---------------------------------------------------------------- ring / connect / miss
@@ -293,6 +284,7 @@ class CallController(
         missStreak = 0
         // 接通就切到通信音频路径：播放走 VOICE_COMMUNICATION，系统回声消除才有参考信号。
         enterCallAudio()
+        startCallService(connectedAt)
         // 接通的一刻就停回铃并给一声接通提示。
         sounds.connected()
         val speech = pendingSpeech
@@ -304,9 +296,10 @@ class CallController(
             missed = false,
             message = null,
         )
-        val s = settings.current
+        val s = settings()
         // 实时通道默认关闭：只有用户在设置里打开且配置完整时才尝试，避免无谓的 401 与降级提示。
-        if (s.realtimeEnabled && s.realtime.configured && speech == null) {
+        if (s.realtimeEnabled && s.realtime.configured &&
+            (speech == null || !s.asr.configured || !s.tts.configured)) {
             startRealtime()
         } else {
             startHandsfree(message = null, opening = speech ?: openingLine(mood))
@@ -314,12 +307,13 @@ class CallController(
     }
 
     private fun miss(reading: MoodReading) {
-        missStreak++
+        val incoming = _state.value.incoming
+        if (!incoming) missStreak++
         val now = clock()
         val late = MoodInference.lateNight(now, zone)
         // 没接只和心情/忙闲有关，不再按时段判断；免打扰不拦来电。
-        val text = missText(reading.mood)
-        stopChannels()
+        val text = if (incoming) "这通来电未接听，可以回拨或继续聊天。" else missText(reading.mood)
+        stopAll()
         sounds.ended()
         _state.value = _state.value.copy(
             phase = CallState.Phase.IDLE,
@@ -329,7 +323,7 @@ class CallController(
         )
         record(CallOutcome.MISSED, text, now)
         // 原因只写进通话明细；聊天流不放任何通话条目。
-        if (late) {
+        if (late && !incoming) {
             scope.launch { runCatching { relationship.scheduleGreeting(MoodInference.nextMorning(now, zone)) } }
         }
     }
@@ -375,6 +369,8 @@ class CallController(
     private fun stopAll() {
         job?.cancel()
         job = null
+        pendingSpeech = null
+        _level.value = 0f
         stopCallService()
         stopChannels()
     }
@@ -465,11 +461,11 @@ class CallController(
             onPhoneTask = { goal -> session.submit(goal) },
             onFailure = ::onRealtimeFailure,
             onLevel = { _level.value = it },
-            selfName = settings.current.persona.nameOr(context.getString(R.string.app_name)),
+            selfName = settings().persona.nameOr(context.getString(R.string.app_name)),
         )
         realtime = client
         // 实时通道也优先用统一音色（含克隆），供应商不支持时才保留该通道自己的音色。
-        val current = settings.current
+        val current = settings()
         val unified = current.speechVoice
         val config = current.realtime.copy(
             voice = unified.takeIf { VoiceRouting.realtimeSupports(current.realtime.baseUrl, it) }
@@ -482,6 +478,7 @@ class CallController(
 
     private fun onRealtimePhase(phase: RealtimeClient.Phase) {
         if (!realtimeActive()) return
+        _level.value = 0f
         _state.value = _state.value.copy(
             phase = when (phase) {
                 RealtimeClient.Phase.CONNECTING -> CallState.Phase.CONNECTING
@@ -504,7 +501,7 @@ class CallController(
     // ---------------------------------------------------------------- hands-free fallback
 
     private fun startHandsfree(message: String? = null, opening: String? = null) {
-        val s = settings.current
+        val s = settings()
         if (!s.asr.configured || !s.tts.configured) {
             // Say both things: which channel failed, and why the fallback cannot start either.
             failCall(
@@ -682,7 +679,7 @@ class CallController(
     private suspend fun transcribe(recording: File): String? {
         _state.value = _state.value.copy(phase = CallState.Phase.TRANSCRIBING)
         return try {
-            api.transcribe(settings.current.asr, recording)
+            api.transcribe(settings().asr, recording)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -724,7 +721,7 @@ class CallController(
     private suspend fun speak(text: String) {
         _state.value = _state.value.copy(phase = CallState.Phase.SPEAKING, message = null)
         _level.value = 0f
-        val current = settings.current
+        val current = settings()
         // 人格设定里没显式选音色时按性别取默认（女 claire / 男 alex）。
         val tts = current.tts.copy(voice = current.speechVoice)
         if (!TtsScript.readable(text)) {
@@ -765,7 +762,8 @@ class CallController(
         val done = CompletableDeferred<Unit>()
         withContext(Dispatchers.Main) { start { done.complete(Unit) } }
         try {
-            while (_state.value.active && !done.isCompleted) delay(POLL_MS)
+            while (_state.value.active && _state.value.phase == CallState.Phase.SPEAKING &&
+                !done.isCompleted) delay(POLL_MS)
         } finally {
             withContext(Dispatchers.Main) { speaker.stop() }
             _level.value = 0f

@@ -69,8 +69,10 @@ internal fun ChatHeader(
     presence: String = "在",
     /** 长按通话键：让她打过来，用来展示来电界面。 */
     onIncoming: () -> Unit = {},
-    /** 聊天是独立全屏页：左上角返回上一次的内容页。 */
+    /** 左上角返回会话列表。 */
     onBack: (() -> Unit)? = null,
+    onOpenAgentSettings: (() -> Unit)? = null,
+    onOpenCompanionship: (() -> Unit)? = null,
     /** 头像统一走相册头像；没选图时退回原来的浅色圆形占位。 */
     avatar: @Composable () -> Unit = {
         Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.size(SizeTokens.avatarHeader)) {
@@ -115,6 +117,53 @@ internal fun ChatHeader(
                 }
             }
             HeaderCircleButton(Icons.Outlined.Call, stringResource(R.string.call_start), onCall, palette.accent, palette.accentSoft, onLongPress = onIncoming)
+            if (onOpenAgentSettings != null || onOpenCompanionship != null) {
+                var menuOpen by remember { mutableStateOf(false) }
+                Box {
+                    IconButton(
+                        onClick = { menuOpen = true },
+                        modifier = Modifier.size(SizeTokens.touchTarget),
+                    ) {
+                        Icon(
+                            Icons.Outlined.MoreHoriz,
+                            contentDescription = "更多选项",
+                            tint = palette.ink2,
+                            modifier = Modifier.size(IconSize.xl),
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = menuOpen,
+                        onDismissRequest = { menuOpen = false },
+                        shape = RoundedCornerShape(Radius.md),
+                        containerColor = palette.surface,
+                    ) {
+                        if (onOpenAgentSettings != null) {
+                            DropdownMenuItem(
+                                text = { Text("人设设置") },
+                                leadingIcon = {
+                                    Icon(Icons.Outlined.Person, contentDescription = null, modifier = Modifier.size(IconSize.lg))
+                                },
+                                onClick = {
+                                    menuOpen = false
+                                    onOpenAgentSettings()
+                                },
+                            )
+                        }
+                        if (onOpenCompanionship != null) {
+                            DropdownMenuItem(
+                                text = { Text("陪伴与回忆") },
+                                leadingIcon = {
+                                    Icon(Icons.Outlined.FavoriteBorder, contentDescription = null, modifier = Modifier.size(IconSize.lg))
+                                },
+                                onClick = {
+                                    menuOpen = false
+                                    onOpenCompanionship()
+                                },
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -422,10 +471,10 @@ internal fun TypingBubble(avatar: (@Composable () -> Unit)? = null) {
 
 /** 超过 10 秒还没回：只加一行小字和「停」，不显示处理步骤。 */
 @Composable
-internal fun LongWaitRow(onStop: () -> Unit) {
+internal fun LongWaitRow(personaName: String, onStop: () -> Unit) {
     val palette = LocalXiaomanPalette.current
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text("她还在写", style = MaterialTheme.typography.labelMedium, color = palette.ink3, modifier = Modifier.weight(1f))
+        Text("${personaName}还在写", style = MaterialTheme.typography.labelMedium, color = palette.ink3, modifier = Modifier.weight(1f))
         TextButton(
             onClick = onStop,
             modifier = Modifier.size(SizeTokens.touchTarget),
