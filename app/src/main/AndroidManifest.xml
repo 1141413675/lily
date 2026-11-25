@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 通话页：按住说话时录音，上传给设置里配置的识别服务。 -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- 通话期间切 MODE_IN_COMMUNICATION 并保持外放，让播放走通信路径参与系统回声消除。 -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- xiaoman://alarm/set opens the clock's prefilled new-alarm page (AlarmClock.ACTION_SET_ALARM). -->
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- 通话切到后台时继续采集麦克风，前台服务类型必须是 microphone。 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+
+    <application
+        android:name=".XiaomanApp"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Xiaoman">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Keeps the process in the foreground while the agent runs a chat turn or operates other apps. -->
+        <service
+            android:name=".AgentService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="On-device personal agent that operates other apps through an accessibility service while the user waits for a task to finish; the user can stop it from the notification or overlay." />
+        </service>
+
+        <receiver
+            android:name=".NotificationActionReceiver"
+            android:exported="false" />
+
+        <!-- 通话期间的前台服务：后台不断线，并保留一条通话类持续通知。 -->
+        <service
+            android:name=".voice.CallService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
+        <!-- Fires reminder_set alarms scheduled with AlarmManager.setAndAllowWhileIdle. -->
+        <receiver
+            android:name=".ReminderReceiver"
+            android:exported="false" />
+
+        <!-- Nightly memory tidying (做梦); the alarm is armed by DreamScheduler. -->
+        <receiver
+            android:name=".dream.DreamReceiver"
+            android:exported="false" />
+
+        <!-- Periodic proactive-opening check; the alarm is armed by ProactiveScheduler. -->
+        <receiver
+            android:name=".relationship.ProactiveReceiver"
+            android:exported="false" />
+
+        <!-- 系统改时区 / 改时间后重排 23:30 做梦与主动检查。 -->
+        <receiver
+            android:name=".TimeChangeReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.DATE_CHANGED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- 拍照：把 cache 里的临时文件以 content:// 交给相机 App，不需要声明 CAMERA 权限。 -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+    </application>
+</manifest>

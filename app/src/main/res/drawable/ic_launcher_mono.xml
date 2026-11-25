@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 13+ 主题图标用的单色层：只保留手写 lily 的笔画，由系统统一上色。
+     与原图同一套字形，不依赖字体，因此在任何设备上形状一致。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- l -->
+    <path
+        android:pathData="M30.96,43.92 C27.36,51.84 27.36,60.48 30.96,63.36 C34.56,65.52 37.44,59.76 35.28,54"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="3.42"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- i 的竖 -->
+    <path
+        android:pathData="M40.32,54.72 L40.32,63.36"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="3.42"
+        android:strokeLineCap="round" />
+
+    <!-- i 的点 -->
+    <path
+        android:pathData="M40.32,46.51 A1.73,1.73 0 1,0 40.32,49.97 A1.73,1.73 0 1,0 40.32,46.51 Z"
+        android:fillColor="#FFFFFFFF" />
+
+    <!-- l -->
+    <path
+        android:pathData="M49.68,43.92 C46.08,51.84 46.08,60.48 49.68,63.36 C53.28,65.52 56.16,59.76 54,54"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="3.42"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- y -->
+    <path
+        android:pathData="M61.2,55.44 C61.2,60.48 63.36,62.64 66.24,63"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="3.42"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M75.6,54 C73.44,59.76 69.12,66.24 62.64,67.68"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="3.42"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

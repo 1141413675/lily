@@ -1,0 +1,40 @@
+# ---- Gradle / Android 构建产物 ----
+.gradle/
+.kotlin/
+build/
+*/build/
+**/build/
+.cxx/
+captures/
+.externalNativeBuild/
+
+# ---- 本地配置与密钥 ----
+local.properties
+keystore.properties
+.env
+.env.*
+*.jks
+*.keystore
+*.p12
+*.pem
+signing/
+
+# ---- APK / 安装包输出 ----
+*.apk
+*.aab
+*.aar
+*.ap_
+outputs/
+release/
+
+# ---- 本地缓存与临时文件 ----
+.DS_Store
+*.iml
+.idea/
+__pycache__/
+*.pyc
+*.log
+/traces/
+
+# ---- 本地设计草稿与沙箱（含本机绝对路径）----
+.superpowers/
