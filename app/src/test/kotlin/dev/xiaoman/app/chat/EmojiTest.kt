@@ -8,6 +8,13 @@ import org.junit.Test
 class EmojiTest {
 
     @Test
+    fun stripRemovesAsrEmotionSuffix() {
+        assertEquals("没有啊，我很开心哦。", Emoji.strip("没有啊，我很开心哦。😔"))
+        assertEquals("", Emoji.strip("😔"))
+        assertEquals("在呢", Emoji.strip("在呢 "))
+    }
+
+    @Test
     fun quotaFollowsTheThreeLevels() {
         // 克制：每 6 条 1 条
         assertTrue(Emoji.allowed(EmojiStyle.RESTRAINED, 0))

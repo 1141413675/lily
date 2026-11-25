@@ -7,6 +7,7 @@ import android.media.AudioManager
 import android.util.Log
 import androidx.core.content.ContextCompat
 import dev.xiaoman.app.R
+import dev.xiaoman.app.chat.Emoji
 import dev.xiaoman.app.relationship.RelationshipStore
 import dev.xiaoman.app.settings.AppSettings
 import dev.xiaoman.app.session.AgentSession
@@ -447,15 +448,18 @@ class CallController(
             scope = scope,
             onPhase = ::onRealtimePhase,
             onUserText = { text ->
-                if (realtimeActive()) {
-                    _state.value = _state.value.copy(heard = text)
-                    noteTurn(fromMe = true, text = text)
+                // 通话字幕不显示 emoji：ASR（SenseVoice）会把情绪表情一并写进 text。
+                val line = Emoji.strip(text)
+                if (realtimeActive() && line.isNotBlank()) {
+                    _state.value = _state.value.copy(heard = line)
+                    noteTurn(fromMe = true, text = line)
                 }
             },
             onAssistantText = { text ->
-                if (realtimeActive()) {
-                    _state.value = _state.value.copy(reply = text)
-                    noteTurn(fromMe = false, text = text)
+                val line = Emoji.strip(text)
+                if (realtimeActive() && line.isNotBlank()) {
+                    _state.value = _state.value.copy(reply = line)
+                    noteTurn(fromMe = false, text = line)
                 }
             },
             onPhoneTask = { goal -> session.submit(goal) },
@@ -571,18 +575,21 @@ class CallController(
                 null -> say("这句话没有回复，再试一次。")
                 is Reply.Failed -> say(reply.text)
                 is Reply.Text -> {
-                    _state.value = _state.value.copy(reply = reply.text)
-                    speak(reply.text)
+                    // 她的回复也可能带 emoji；通话气泡不显示，朗读本来也会剔掉。
+                    val line = Emoji.strip(reply.text)
+                    _state.value = _state.value.copy(reply = line.takeIf { it.isNotBlank() })
+                    speak(line)
                 }
                 is Reply.Voice -> {
                     // 语音回复只展示真正说了什么；没有文本时留空，不写「（语音回复）」这类内部标记。
+                    val line = Emoji.strip(reply.spokenText.orEmpty())
                     _state.value = _state.value.copy(
-                        reply = reply.spokenText?.takeIf { it.isNotBlank() },
+                        reply = line.takeIf { it.isNotBlank() },
                         phase = CallState.Phase.SPEAKING,
                     )
-                    noteTurn(fromMe = false, text = reply.spokenText ?: "（语音回复）")
+                    noteTurn(fromMe = false, text = line.ifBlank { "（语音回复）" })
                     // 语音文件走 MediaPlayer：同样要把这句话记进比对基准，否则外放回声会被当成用户输入。
-                    spoken.remember(reply.spokenText)
+                    spoken.remember(line)
                     playVoice(reply.file)
                 }
             }
@@ -679,7 +686,15 @@ class CallController(
     private suspend fun transcribe(recording: File): String? {
         _state.value = _state.value.copy(phase = CallState.Phase.TRANSCRIBING)
         return try {
-            api.transcribe(settings().asr, recording)
+            // SenseVoice 会把情绪表情（如 😔）写进识别文本；通话不显示表情，先剥掉再走对话与字幕。
+            // 剥完为空说明这句只有表情/空白，按「没听清」处理，不写入空气泡。
+            val text = Emoji.strip(api.transcribe(settings().asr, recording))
+            if (text.isBlank()) {
+                Log.i(TAG, "call: transcription empty after emoji strip")
+                null
+            } else {
+                text
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -724,15 +739,17 @@ class CallController(
         val current = settings()
         // 按当前朗读引擎换算音色；硅基与豆包 的 voice id 不通用。
         val tts = current.ttsRequest
-        if (!TtsScript.readable(text)) {
+        // 通话字幕与朗读共用同一份正文：先剥 emoji，空了就当作没有可说内容，直接回到听。
+        val line = Emoji.strip(text)
+        if (!TtsScript.readable(line)) {
             // 整条都在括号里，没什么可念的：直接回到听。
             _state.value = _state.value.copy(phase = CallState.Phase.LISTENING)
             return
         }
-        noteTurn(fromMe = false, text = text)
-        spoken.remember(text)
+        noteTurn(fromMe = false, text = line)
+        spoken.remember(line)
         try {
-            engine.stream(tts, text, fallback = current.ttsFallback) { _, bytes ->
+            engine.stream(tts, line, fallback = current.ttsFallback) { _, bytes ->
                 if (!_state.value.active || _state.value.phase != CallState.Phase.SPEAKING) return@stream
                 playClip { done -> speaker.play(bytes, done) }
             }

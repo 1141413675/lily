@@ -21,6 +21,12 @@ class TtsScriptTest {
         assertTrue(TtsScript.readable("（笑）嗯"))
     }
 
+    @Test fun emotionEmojiNeverReachesTheSynthesizer() {
+        // SenseVoice 会把情绪表情写进识别文本；朗读与通话字幕都必须先剥掉。
+        assertEquals("没有啊，我很开心哦。", TtsScript.clean("没有啊，我很开心哦。😔"))
+        assertFalse(TtsScript.readable("😔"))
+    }
+
     @Test fun markdownListsEmojiAndUrlsAreStripped() {
         val raw = """
             ## 今天

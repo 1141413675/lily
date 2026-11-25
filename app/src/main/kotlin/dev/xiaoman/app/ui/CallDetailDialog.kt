@@ -162,12 +162,15 @@ internal fun CallDetailDialog(
                                         }
                                     }
                                 }
-                                Text(
-                                    turn.text,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = palette.ink,
-                                    modifier = Modifier.padding(top = Space.xs),
-                                )
+                                val line = dev.xiaoman.app.chat.Emoji.strip(turn.text)
+                                if (line.isNotBlank()) {
+                                    Text(
+                                        line,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = palette.ink,
+                                        modifier = Modifier.padding(top = Space.xs),
+                                    )
+                                }
                             }
                         }
                     }
