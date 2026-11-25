@@ -6,6 +6,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -412,32 +413,63 @@ private fun VoiceStage(state: CallState, controller: CallController, modifier: M
     }
 }
 
-private val VoiceDotWeights = floatArrayOf(0.36f, 0.71f, 1f, 0.71f, 0.36f)
+private val VoiceDotWeights = floatArrayOf(0.30f, 0.62f, 1f, 0.62f, 0.30f)
 
 @Composable
 private fun VoiceSignal(phase: CallState.Phase, muted: Boolean, controller: CallController) {
-    // 音量只在绘制时读取，通话页面不会随每个音量样本重新组合。
+    // 音量只在绘制阶段读取，并用一个低速低通值，避免麦克风样本让画面抖动。
     val level = controller.level.collectAsStateWithLifecycle()
+    val smoothed = remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            val target = level.value.coerceIn(0f, 1f)
+            smoothed.floatValue += (target - smoothed.floatValue) * 0.18f
+            kotlinx.coroutines.delay(80)
+        }
+    }
     val motion = LocalMotionEnabled.current
     val tint = LocalXiaomanPalette.current.accent
     val speaking = phase == CallState.Phase.SPEAKING
     val listening = phase == CallState.Phase.LISTENING && !muted
     val waiting = phase == CallState.Phase.CONNECTING || phase == CallState.Phase.THINKING ||
         phase == CallState.Phase.TRANSCRIBING
+    // 三种状态共用一条时间轴：思考放慢，播报与聆听同一节奏，切换不会突然换一套动画。
+    val transition = androidx.compose.animation.core.rememberInfiniteTransition(label = "voice")
+    val phaseState = transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+            animation = androidx.compose.animation.core.tween(
+                durationMillis = if (waiting) 3200 else 2400,
+                easing = androidx.compose.animation.core.LinearEasing,
+            ),
+        ),
+        label = "voice-phase",
+    )
     Canvas(Modifier.size(width = 112.dp, height = 56.dp)) {
-        val strength = if (motion && (speaking || listening)) level.value.coerceIn(0f, 1f) else 0f
+        val p = if (motion) phaseState.value else 0.25f
+        val strength = if (motion && (speaking || listening)) smoothed.floatValue else 0f
         val width = 6.dp.toPx()
         val gap = 19.dp.toPx()
         VoiceDotWeights.forEachIndexed { index, weight ->
             val centerDot = index == 2
+            // 一条缓慢移动的波：权重越靠中间越明显，外圈只轻轻跟，不抢注意力。
+            val wave = (0.5f + 0.5f * kotlin.math.sin((p * 2f * Math.PI - index * 0.7).toFloat()))
             val alpha = when {
-                waiting && index in 1..3 -> if (centerDot) 0.86f else 0.44f
-                (speaking || listening) && centerDot -> 0.88f
-                speaking || listening -> ((strength - 0.07f) * 1.55f * weight).coerceIn(0f, 0.9f)
+                waiting -> 0.28f + 0.42f * wave
+                speaking -> (0.34f + 0.50f * strength + 0.18f * wave).coerceIn(0f, 0.92f) *
+                    (if (centerDot) 1f else 0.72f)
+                listening -> if (centerDot) 0.84f else (strength * 1.4f * weight).coerceIn(0f, 0.78f)
                 else -> 0f
             }
             if (alpha > 0f) {
-                val height = (6f + strength * weight * (if (speaking) 40f else 32f)).dp.toPx()
+                val pulse = if (speaking) {
+                    // 播报时不再依赖麦克风回声：一条主波 + 轻微电平，柱子不会乱跳。
+                    0.45f + 0.35f * strength + 0.20f * wave
+                } else {
+                    strength
+                }
+                val height = (6f + pulse * weight * (if (speaking) 40f else 32f)).dp.toPx()
                 drawRoundRect(
                     color = tint.copy(alpha = alpha),
                     topLeft = Offset(center.x + (index - 2) * gap - width / 2f, center.y - height / 2f),
