@@ -169,8 +169,8 @@
     <string name="models_asr_incomplete">还差：%1$s。填好就能用来识别。</string>
     <string name="models_asr_resource_id_hint">留空用默认 volc.seedasr.sauc.duration（2.0 小时版）。</string>
     <string name="models_asr_doubao_fixed_url">识别地址固定，不用手填。</string>
-    <string name="models_key_dashscope">用阿里云百炼的 Key（sk- 开头），地址默认 wss://dashscope.aliyuncs.com/api-ws/v1/realtime</string>
-    <string name="models_realtime_switch">实时全双工（默认关闭）。关闭时通话走「录音 → 识别 → 回复 → 朗读」的轮次链路；打开才会尝试百炼实时通道。</string>
+    <string name="models_key_doubao_realtime">用火山方舟的 Key（ark- 开头），与下面「豆包」朗读/识别共用同一个。地址默认 wss://openspeech.bytedance.com/api/v3/duplex/realtime/dialogue</string>
+    <string name="models_realtime_switch">实时全双工（默认关闭）。关闭时通话走「录音 → 识别 → 回复 → 朗读」的轮次链路；打开才会尝试豆包 3.0 实时通道。</string>
     <string name="models_unsaved_title">还有改动没保存</string>
     <string name="models_unsaved_body">Key 或地址改完没有点「记住」，现在离开会丢失。要先保存再返回吗？</string>
     <string name="models_unsaved_save">保存并返回</string>
@@ -256,7 +256,7 @@
     <string name="settings_asr">语音识别</string>
     <string name="settings_tts">语音朗读</string>
     <string name="settings_realtime">实时通话（全双工）</string>
-    <string name="settings_realtime_hint">默认关闭。打开后整通电话优先走实时全双工；连不上会自动退回「录音 → 识别 → 回复 → 朗读」的轮次链路。实时音色也优先用「TA」里的统一音色，这里只在通道不支持时兜底。默认用 qwen-omni-turbo-realtime 与 wss://dashscope.aliyuncs.com/api-ws/v1/realtime；若改用 qwen3.8-omni-flash-realtime，地址需填业务空间专属域名 wss://{WorkspaceId}.cn-beijing.maas.aliyuncs.com。</string>
+    <string name="settings_realtime_hint">默认关闭。打开后整通电话优先走实时全双工；连不上会自动退回「录音 → 识别 → 回复 → 朗读」的轮次链路。实时音色也优先用「TA」里的统一音色，这里只在通道不支持时兜底。默认用豆包实时语音模型 3.0（Seeduplex）：地址 wss://openspeech.bytedance.com/api/v3/duplex/realtime/dialogue，模型固定 1.2.6.1，Key 与「豆包」朗读共用同一个。</string>
     <string name="settings_voice_name">音色（可选）</string>
     <string name="settings_reply">怎么回你</string>
     <string name="settings_reply_auto">看情况</string>

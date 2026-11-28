@@ -135,10 +135,19 @@ data class VoiceSettings(
         const val DOUBAO_ASR_BASE_URL = "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async"
         const val DOUBAO_ASR_RESOURCE_ID = "volc.seedasr.sauc.duration"
 
-        /** Alibaba DashScope: OpenAI-Realtime-compatible event protocol, reachable from mainland China. */
-        const val DEFAULT_REALTIME_BASE_URL = "wss://dashscope.aliyuncs.com/api-ws/v1/realtime"
-        const val DEFAULT_REALTIME_MODEL = "qwen-omni-turbo-realtime"
-        const val DEFAULT_REALTIME_VOICE = "Cherry"
+        /**
+         * 豆包实时语音模型 3.0（Seeduplex）全双工端点。
+         *
+         * 火山方舟的语音接口都在 `openspeech.bytedance.com` 下，鉴权用 `X-Api-Key`，
+         * 与豆包 TTS/ASR 共用同一个 Key，不需要另外申请。
+         */
+        const val DEFAULT_REALTIME_BASE_URL = "wss://openspeech.bytedance.com/api/v3/duplex/realtime/dialogue"
+
+        /** 全双工版本的模型固定值，由服务端按 `session.model` 判定，不随设置变化。 */
+        const val DEFAULT_REALTIME_MODEL = "1.2.6.1"
+
+        /** 兜底音色：官方 S2S 音色列表里的 Vivi 2.0。 */
+        const val DEFAULT_REALTIME_VOICE = "zh_female_vv_uranus_bigtts"
     }
 }
 

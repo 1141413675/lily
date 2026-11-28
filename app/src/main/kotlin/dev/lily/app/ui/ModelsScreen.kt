@@ -199,7 +199,7 @@ fun ModelsScreen(graph: AppGraph, onBack: () -> Unit) {
                         )
                     },
                 )
-                KeyHint(stringResource(R.string.models_key_dashscope))
+                KeyHint(stringResource(R.string.models_key_doubao_realtime))
                 VoiceSection(form.realtime) {
                     form = form.copy(realtime = it)
                     saved = false

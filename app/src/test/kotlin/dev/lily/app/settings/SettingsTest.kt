@@ -46,7 +46,7 @@ class SettingsTest {
         store().save(sample)
         val loaded = store().current
         // 朗读与通话音色在升级后统一为一份：取当前朗读引擎那处，写回朗读并记进人格设定。
-        // 实时通道是 DashScope，它不认识朗读引擎音色名，所以保留自己的预置音色。
+        // 实时通道是豆包 3.0 全双工，它只认官方 S2S 音色 id，所以保留自己的预置音色。
         val voice = sample.tts.active.voice
         val expected = sample.copy(
             realtime = sample.realtime,
@@ -79,7 +79,7 @@ class SettingsTest {
         // 统一音色写在人格里；朗读按当前引擎换算后会拿到克隆 uri。
         assertEquals(clone, saved.persona.voice)
         assertEquals(clone, saved.ttsRequest.voice)
-        // DashScope 实时通道保留原音色，不静默写成克隆 uri。
+        // 豆包 3.0 实时通道保留原音色，不静默写成克隆 uri。
         assertEquals(AppSettings().realtime.voice, saved.realtime.voice)
         assertEquals(clone, saved.speechVoice)
     }

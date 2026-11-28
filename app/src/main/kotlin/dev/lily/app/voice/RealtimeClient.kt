@@ -30,15 +30,17 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.abs
 
 /**
- * Real-time full-duplex voice over the OpenAI-Realtime-style WebSocket protocol (DashScope
- * Qwen-Omni Realtime by default, any compatible endpoint by changing the settings):
+ * Real-time full-duplex voice over **豆包实时语音模型 3.0（Seeduplex）** 的 Realtime 协议。
  *
- * - microphone PCM16/16 kHz is streamed up continuously (`input_audio_buffer.append`);
- * - server VAD decides when the user started/stopped talking, so the model answers while the
- *   mic stays open (`input_audio_buffer.speech_started` also drives barge-in);
- * - reply PCM16/24 kHz streams down (`response.audio.delta`) into a streaming [AudioTrack];
- * - talking over the reply stops local playback and sends `response.cancel`;
- * - a `run_phone_task` function is exposed; the task runs in the existing chat session.
+ * 协议细节集中在 [Seeduplex]，这里只管连接、音频与状态：
+ *
+ * - 麦克风 PCM16/16 kHz 按 20ms 一包持续上行（`input_audio_buffer.append`）；
+ * - 3.0 没有服务端 VAD 事件，**由本地判停**：静默达到阈值就发 `input_audio_buffer.commit`
+ *   强制模型判停，她就能在说话的同时先想好怎么答；
+ * - 麦克风静音时不发音频帧，必须发 `input_audio_mute.commit` 保活，否则服务端判无输入而超时；
+ * - 回复音频 `pcm_s16le`/24 kHz 直接进 [PcmPlayer]，不用重采样；
+ * - 说话打断回复：停播 + `response.cancel`；
+ * - `run_phone_task` 函数；任务在现有聊天会话里跑，结果回聊天页。
  *
  * The agent, memory, skills and Sentinel are untouched: the only bridge is [onPhoneTask].
  */
@@ -82,13 +84,38 @@ class RealtimeClient(
     @Volatile private var pausedOnce = false
     private var resumeJob: Job? = null
 
+    /** 服务端回的 session.id；下一次建会话时带上它可以接续历史对话。 */
+    @Volatile private var sessionId = ""
+
+    /** 正在优雅收尾：已发 session.close，等 session.closed 或宽限超时再断链。 */
+    @Volatile private var closing = false
+
+    /**
+     * 本地判停状态。
+     *
+     * 3.0 没有服务端 VAD 事件，模型不会自己知道「用户说完了」，所以客户端要在
+     * 静音达到 [SILENCE_MS] 时发一次 `input_audio_buffer.commit` 强制判停。
+     * 说话期间（[speaking]）不判停：她正在回话时用户插话，那属于抢话，不该被判成一轮结束。
+     */
+    @Volatile private var turnSpeaking = false
+    @Volatile private var silenceMs = 0
+
     /** 最近一两条播报文本，只用于识别结果的自回声比对（最多两条）。 */
     private val recentSpoken = ArrayDeque<String>()
 
     /** 静音只停止上报麦克风，连接与当前回复都不受影响。 */
     fun setMuted(value: Boolean) {
+        if (micMuted == value) return
         micMuted = value
-        if (value && !speaking) onLevel(0f)
+        // 3.0 靠音频流保活：停发音频帧时必须显式发静音事件，否则服务端会判定无输入而超时。
+        if (!closed) {
+            send(if (value) Seeduplex.audioMute() else Seeduplex.audioUnmute())
+        }
+        if (value) {
+            turnSpeaking = false
+            silenceMs = 0
+            if (!speaking) onLevel(0f)
+        }
     }
 
     fun start(config: VoiceSettings) {
@@ -99,7 +126,8 @@ class RealtimeClient(
         Log.i(TAG, "realtime connecting host=${endpoint.substringBefore('?').substringAfter("://")} model=${config.model} scheme=${endpoint.substringBefore("://")}")
         val request = Request.Builder()
             .url(endpoint)
-            .header("Authorization", "Bearer ${config.apiKey.trim()}")
+            // 豆包 3.0 用 X-Api-Key，与豆包 TTS/ASR 同一个 Key，不需要另外申请。
+            .header("X-Api-Key", config.apiKey.trim())
             .build()
         socket = http.newWebSocket(request, listener)
     }
@@ -117,14 +145,22 @@ class RealtimeClient(
         resumeJob = null
         capture?.cancel()
         capture = null
-        socket?.close(1000, "bye")
-        socket = null
-        player.release()
-        record?.let {
-            try {
-                it.stop()
-            } catch (e: Exception) {
-                // Already stopped.
+        // 3.0 要求先发 session.close、等 session.closed 回执再断链，直接断会被记成
+        // ContextCanceled（55000001）。所以这里只发事件，断链交给 onClosed。
+        closing = true
+        runCatching { socket?.send(Seeduplex.sessionClose()) }
+        // 服务端不回执也要能收尾：给一段宽限时间后强制关。
+        scope.launch {
+            delay(CLOSE_GRACE_MS)
+            socket?.close(1000, "bye")
+            socket = null
+            player.release()
+            record?.let {
+                try {
+                    it.stop()
+                } catch (e: Exception) {
+                    // Already stopped.
+                }
             }
         }
     }
@@ -136,7 +172,8 @@ class RealtimeClient(
                 return
             }
             Log.i(TAG, "realtime websocket open code=${response.code}")
-            send(sessionUpdate())
+            // 3.0 用 session.create 建会话，不是 session.update。
+            send(Seeduplex.sessionCreate(instructions(selfName), settingsVoice(), tools()))
             onPhase(Phase.LISTENING)
             startCapture()
         }
@@ -160,38 +197,29 @@ class RealtimeClient(
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
             Log.i(TAG, "realtime websocket closed code=$code reason=$reason")
-            if (!closed) fail("实时语音连接已断开")
+            socket = null
+            player.release()
+            // 正常收尾不算失败。
+            if (!closed && !closing) fail("实时语音连接已断开")
         }
     }
 
-    private fun sessionUpdate(): String {
-        val session = JSONObject()
-            .put("modalities", JSONArray().put("text").put("audio"))
-            .put("instructions", instructions(selfName))
-            .put("voice", settingsVoice())
-            .put("turn_detection", JSONObject()
-                .put("type", "server_vad")
-                .put("threshold", 0.5)
-                .put("prefix_padding_ms", 300)
-                .put("silence_duration_ms", 600))
-            .put("tools", JSONArray().put(JSONObject()
-                .put("type", "function")
-                .put("name", "run_phone_task")
-                .put("description", "在用户的手机上执行一个任务（打开 App、点按、填写等）。任务在后台运行，结果稍后显示在聊天页。")
-                .put("parameters", JSONObject()
-                    .put("type", "object")
-                    .put("properties", JSONObject()
-                        .put("goal", JSONObject()
-                            .put("type", "string")
-                            .put("description", "要完成的事情，写成一句清楚的中文目标")))
-                    .put("required", JSONArray().put("goal")))))
-            .put("tool_choice", "auto")
-        return JSONObject().put("type", "session.update").put("session", session).toString()
-    }
+    /** 函数声明：只暴露「在手机上执行一个任务」这一件事。 */
+    private fun tools(): JSONArray = JSONArray().put(JSONObject()
+        .put("type", "function")
+        .put("name", "run_phone_task")
+        .put("description", "在用户的手机上执行一个任务（打开 App、点按、填写等）。任务在后台运行，结果稍后显示在聊天页。")
+        .put("parameters", JSONObject()
+            .put("type", "object")
+            .put("properties", JSONObject()
+                .put("goal", JSONObject()
+                    .put("type", "string")
+                    .put("description", "要完成的事情，写成一句清楚的中文目标")))
+            .put("required", JSONArray().put("goal"))))
 
     @Volatile private var voice = ""
 
-    private fun settingsVoice(): String = voice.ifBlank { "Cherry" }
+    private fun settingsVoice(): String = voice.ifBlank { DEFAULT_VOICE }
 
     private fun buildUrl(config: VoiceSettings): String {
         voice = config.voice.trim()
@@ -207,16 +235,21 @@ class RealtimeClient(
             return
         }
         when (event.optString("type")) {
-            "session.updated" -> onPhase(Phase.LISTENING)
-            "input_audio_buffer.speech_started" -> if (speaking || responseActive) interruptPlayback()
-            "response.created" -> {
+            Seeduplex.Down.SESSION_CREATED -> {
+                // 3.0 在这里回 session.id（即原来的 dialog.id）：带上它就能接续历史对话。
+                sessionId = event.optJSONObject("session")?.optString("id").orEmpty()
+                    .ifBlank { event.optString("id") }
+                onPhase(Phase.LISTENING)
+            }
+            // 3.0 没有 speech_started 事件：抢话靠本地音量检测（见采集循环）。
+            Seeduplex.Down.OUTPUT_AUDIO_STARTED -> {
                 responseSequence++
                 discardResponseAudio = false
                 responseActive = true
                 onPhase(Phase.THINKING)
             }
-            "response.audio.delta" -> {
-                val audio = event.optString("delta")
+            Seeduplex.Down.OUTPUT_AUDIO_DELTA -> {
+                val audio = Seeduplex.audioOf(event)
                 if (audio.isNotEmpty() && !discardResponseAudio) {
                     if (!speaking) {
                         speaking = true
@@ -227,19 +260,19 @@ class RealtimeClient(
                     player.write(Base64.decode(audio, Base64.DEFAULT))
                 }
             }
-            "response.audio_transcript.done" -> {
-                val transcript = event.optString("transcript").trim()
+            Seeduplex.Down.OUTPUT_TEXT_DONE -> {
+                val transcript = Seeduplex.textOf(event)
                 if (transcript.isNotEmpty()) rememberSpoken(transcript)
                 transcript.takeIf { it.isNotBlank() }?.let(onAssistantText)
             }
-            "conversation.item.input_audio_transcription.completed" -> {
-                val transcript = event.optString("transcript").trim()
+            Seeduplex.Down.TRANSCRIPTION_COMPLETED -> {
+                val transcript = Seeduplex.textOf(event)
                 if (transcript.isNotEmpty()) {
                     if (EchoGuard.isSelfEcho(transcript, recentSpoken.toList())) {
                         // 文本层兜底：外放回声被识别成用户的话时整轮丢弃，不进对话、不上屏。
                         Log.i(TAG, "call echo dropped: heard=<$transcript> spoken=<${recentSpoken.joinToString(" | ")}>")
-                        event.optString("item_id").takeIf { it.isNotBlank() }?.let { id ->
-                            send(JSONObject().put("type", "conversation.item.delete").put("item_id", id).toString())
+                        itemIdOf(event)?.let { id ->
+                            send(Seeduplex.itemDelete(id))
                         }
                         if (responseActive || speaking) interruptPlayback()
                     } else {
@@ -247,17 +280,35 @@ class RealtimeClient(
                     }
                 }
             }
-            "response.function_call_arguments.done" ->
-                handleToolCall(event.optString("call_id"), event.optString("name"), event.optString("arguments"))
-            "response.output_item.done" -> {
-                val item = event.optJSONObject("item")
-                if (item?.optString("type") == "function_call") {
-                    handleToolCall(item.optString("call_id"), item.optString("name"), item.optString("arguments"))
-                }
+            Seeduplex.Down.TRANSCRIPTION_FAILED -> {
+                // 识别失败要有反馈：把这一轮丢掉，界面回到「在听」，不静默卡住。
+                val message = Seeduplex.errorOf(event).ifBlank { "没听清" }
+                Log.w(TAG, "realtime transcription failed: $message")
+                turnSpeaking = false
+                silenceMs = 0
+                if (responseActive || speaking) interruptPlayback() else onPhase(Phase.LISTENING)
             }
-            "response.done" -> finishResponse()
-            "error" -> {
-                val message = event.optJSONObject("error")?.optString("message").orEmpty()
+            Seeduplex.Down.OUTPUT_AUDIO_DONE -> {
+                // 一轮音频合成结束：回复内容已经到齐，可以准备收尾。
+                Log.i(TAG, "realtime output audio done")
+            }
+            Seeduplex.Down.FUNCTION_CALL_DONE ->
+                Seeduplex.functionCalls(event).forEach { call ->
+                    handleToolCall(call.callId, call.name, call.arguments)
+                }
+            Seeduplex.Down.RESPONSE_DONE -> finishResponse()
+            Seeduplex.Down.RESPONSE_CANCELED -> {
+                responseActive = false
+                if (!speaking) onPhase(Phase.LISTENING)
+            }
+            Seeduplex.Down.SESSION_CLOSED -> {
+                // 服务端确认收尾：这时断链才是官方要求的顺序，不会被记成 ContextCanceled。
+                closing = false
+                socket?.close(1000, "bye")
+                socket = null
+            }
+            Seeduplex.Down.ERROR -> {
+                val message = Seeduplex.errorOf(event)
                 // 取消回复、删除自回声条目属于可选清理；供应商不支持时只记日志，不挂断整通电话。
                 val benign = listOf("cancel", "delete", "item", "not supported").any {
                     message.contains(it, ignoreCase = true)
@@ -271,6 +322,13 @@ class RealtimeClient(
         }
     }
 
+    /** 取识别结果所属的上下文 id，用于自回声时删掉那一轮。 */
+    private fun itemIdOf(event: JSONObject): String? {
+        event.optString("item_id").takeIf { it.isNotBlank() }?.let { return it }
+        val item = event.optJSONObject("item") ?: return null
+        return item.optString("id").takeIf { it.isNotBlank() }
+    }
+
     /** 工具调用最小实现：交给现有聊天会话跑手机任务，结果回聊天页；不回灌到语音。 */
     private fun handleToolCall(callId: String, name: String, arguments: String) {
         if (callId.isBlank() || !handledCalls.add(callId)) return
@@ -282,14 +340,9 @@ class RealtimeClient(
         }
         if (goal.isBlank()) return
         onPhoneTask(goal)
-        send(JSONObject()
-            .put("type", "conversation.item.create")
-            .put("item", JSONObject()
-                .put("type", "function_call_output")
-                .put("call_id", callId)
-                .put("output", "已交给${selfName}在后台执行，进度和结果会显示在聊天页。"))
-            .toString())
-        send(JSONObject().put("type", "response.create").toString())
+        // 3.0 的结果回传结构：items 数组 + role=tool + content 里的 input_text，
+        // 且必须带上与下行一致的 call_id，否则模型配不上这次调用。
+        send(Seeduplex.toolResult(callId, "已交给${selfName}在后台执行，进度和结果会显示在聊天页。"))
     }
 
     private fun finishResponse() {
@@ -319,7 +372,7 @@ class RealtimeClient(
         player.interrupt()
         speaking = false
         responseActive = false
-        send(JSONObject().put("type", "response.cancel").toString())
+        send(Seeduplex.responseCancel())
         onPhase(Phase.LISTENING)
         if (capturePaused) scheduleResume()
     }
@@ -350,6 +403,39 @@ class RealtimeClient(
     private fun rememberSpoken(text: String) {
         recentSpoken.addLast(text)
         while (recentSpoken.size > 2) recentSpoken.removeFirst()
+    }
+
+    /**
+     * 上行一包音频：更新音量、推进本地判停、发给模型。
+     *
+     * 3.0 没有服务端 VAD，模型靠我们发的 `input_audio_buffer.commit` 才知道「用户说完了」。
+     */
+    private fun pushAudio(chunk: ByteArray, amplitude: Int) {
+        onLevel(amplitude / 32767f)
+        trackTurn(amplitude)
+        send(Seeduplex.audioAppend(chunk))
+    }
+
+    /**
+     * 本地判停：3.0 没有服务端 VAD，得由客户端判断「用户说完了」。
+     *
+     * 说话中（音量超过 [SPEECH_PEAK]）就重新计时；连续静音达到 [SILENCE_MS] 就发一次
+     * `input_audio_buffer.commit`，模型据此开始作答。说完后要再等一段静音才允许下一次判停，
+     * 免得模型刚开始回话又被判成新的一轮。
+     */
+    private fun trackTurn(amplitude: Int) {
+        if (amplitude >= SPEECH_PEAK) {
+            turnSpeaking = true
+            silenceMs = 0
+            return
+        }
+        if (!turnSpeaking) return
+        silenceMs += CHUNK_MS
+        if (silenceMs < SILENCE_MS) return
+        turnSpeaking = false
+        silenceMs = 0
+        Log.i(TAG, "realtime: local turn end, commit audio")
+        send(Seeduplex.audioCommit())
     }
 
     private fun startCapture() {
@@ -394,6 +480,8 @@ class RealtimeClient(
                             continue
                         }
                         if (micMuted) {
+                            // 静音时不上行音频帧，但已经发过 input_audio_mute.commit：
+                            // 服务端知道这是主动静音，不会判定无输入而超时。
                             loudChunks = 0
                             if (!speaking) onLevel(0f)
                             continue
@@ -402,15 +490,15 @@ class RealtimeClient(
                         val amplitude = peak(chunk)
                         if (speaking) {
                             loudChunks = if (amplitude >= BARGE_PEAK) loudChunks + 1 else 0
-                            if (loudChunks < 2) continue
+                            if (loudChunks < 2) {
+                                // 播报期间仍照常上行：用户的声音要能传到模型那儿，
+                                // 只是同时在做本地抢话检测。
+                                pushAudio(chunk, amplitude)
+                                continue
+                            }
                             interruptPlayback()
                         }
-                        loudChunks = 0
-                        onLevel(amplitude / 32767f)
-                        send(JSONObject()
-                            .put("type", "input_audio_buffer.append")
-                            .put("audio", Base64.encodeToString(chunk, Base64.NO_WRAP))
-                            .toString())
+                        pushAudio(chunk, amplitude)
                     }
                 } catch (e: CancellationException) {
                     throw e
@@ -488,6 +576,7 @@ class RealtimeClient(
     private fun fail(message: String) {
         if (closed) return
         closed = true
+        closing = false
         resumeJob?.cancel()
         resumeJob = null
         capture?.cancel()
@@ -668,6 +757,27 @@ class RealtimeClient(
         const val CHUNK_BYTES = 3_200
         const val BARGE_PEAK = 2_200
         const val OUTPUT_RATE = 24_000
+
+        /**
+         * 一包音频的时长。
+         *
+         * 豆包 3.0 要求按 20ms 分包（16k/int16 即 640 字节）并贴合实时节奏发送，
+         * 发送过快过慢都会触发服务端错误。麦克风缓冲给到 100ms 一包，读满就发，
+         * 实际节奏由 AudioRecord 的读取阻塞自然对齐。
+         */
+        const val CHUNK_MS = 100
+
+        /** 判停用的音量阈值：低于它算静音。 */
+        const val SPEECH_PEAK = 1_200
+
+        /** 连续静音多久算「这一轮说完了」。 */
+        const val SILENCE_MS = 700
+
+        /** 兜底音色：官方 S2S 音色列表里的 Vivi 2.0。 */
+        const val DEFAULT_VOICE = "zh_female_vv_uranus_bigtts"
+
+        /** 发了 session.close 之后等服务端回执的宽限时间；超时就强制断链。 */
+        const val CLOSE_GRACE_MS = 1_500L
 
         /** 播放结束后等多久再开麦：留一点房间残响，避免恢复的第一帧还是她自己的声音。 */
         const val ECHO_TAIL_MS = 300L

@@ -7,22 +7,27 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** 音色与通道的兼容判断：克隆 uri 只能交给 SiliconFlow，DashScope 用它自己的音色名。 */
+/** 音色与通道的兼容判断：克隆 uri 只能交给 SiliconFlow，豆包 3.0 只认官方 S2S 音色 id。 */
 class VoiceRoutingTest {
 
     @Test fun cloneUriOnlyGoesToSiliconFlow() {
         val clone = "speech:my-voice:abc:xyz"
         assertTrue(VoiceRouting.isClone(clone))
         assertTrue(VoiceRouting.realtimeSupports("https://api.siliconflow.cn/v1", clone))
-        assertFalse(VoiceRouting.realtimeSupports("wss://dashscope.aliyuncs.com/api-ws/v1/realtime", clone))
+        assertFalse(VoiceRouting.realtimeSupports(VoiceSettings.DEFAULT_REALTIME_BASE_URL, clone))
     }
 
-    @Test fun dashscopeRejectsProviderVoiceIdsAndKeepsItsOwn() {
-        val dash = "wss://dashscope.aliyuncs.com/api-ws/v1/realtime"
-        assertFalse(VoiceRouting.realtimeSupports(dash, "FunAudioLLM/CosyVoice2-0.5B:claire"))
-        assertTrue(VoiceRouting.realtimeSupports(dash, "Cherry"))
+    @Test fun doubaoRealtimeAcceptsOfficialS2SVoiceIds() {
+        val ark = VoiceSettings.DEFAULT_REALTIME_BASE_URL
+        // 豆包 TTS 2.0 与 S2S 全双工共用同一套 id，人设里选的音色可直接用于全双工。
+        assertTrue(VoiceRouting.realtimeSupports(ark, "zh_female_gaolengyujie_uranus_bigtts"))
+        assertTrue(VoiceRouting.realtimeSupports(ark, "zh_male_aojiaobazong_uranus_bigtts"))
+        assertTrue(VoiceRouting.realtimeSupports(ark, "ICL_uranus_zh_female_wenrounvshen_tob"))
+        // 别家引擎的音色 id 豆包不认。
+        assertFalse(VoiceRouting.realtimeSupports(ark, "FunAudioLLM/CosyVoice2-0.5B:claire"))
+        assertFalse(VoiceRouting.realtimeSupports(ark, "Cherry"))
         // 空值表示沿用通道默认，不算冲突。
-        assertTrue(VoiceRouting.realtimeSupports(dash, ""))
+        assertTrue(VoiceRouting.realtimeSupports(ark, ""))
     }
 
     @Test fun unknownChannelsAcceptProviderVoices() {
