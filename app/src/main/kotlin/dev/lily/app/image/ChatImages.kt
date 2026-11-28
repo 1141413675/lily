@@ -14,7 +14,6 @@ import java.io.File
 
 sealed interface ImageRequestFeedback {
     data object Generating : ImageRequestFeedback
-    data object LimitReached : ImageRequestFeedback
     data object Disabled : ImageRequestFeedback
     data class Failed internal constructor(
         internal val userText: String,
@@ -71,7 +70,7 @@ class ChatImages(
             }
         }
         val image = settings().image
-        if (!image.enabled || !store.canGenerate(image.dailyLimit)) return
+        if (!image.enabled) return
         val expected = userText
         earlyText = expected
         val result = CompletableDeferred<String?>()
@@ -100,7 +99,6 @@ class ChatImages(
                     null
                 }
                 val saved = bytes?.let(store::save)
-                if (saved != null) store.markGenerated()
                 result.complete(saved?.absolutePath)
             } finally {
                 sharing.unlock()
@@ -130,7 +128,6 @@ class ChatImages(
                         feedbackState.value = when (outcome) {
                             ShareResult.SHARED, ShareResult.IGNORED -> null
                             ShareResult.DISABLED -> ImageRequestFeedback.Disabled
-                            ShareResult.LIMIT_REACHED -> ImageRequestFeedback.LimitReached
                             ShareResult.FAILED -> ImageRequestFeedback.Failed(userText, replyText)
                         }
                     } finally {
@@ -165,6 +162,52 @@ class ChatImages(
         feedbackState.value = null
     }
 
+    /**
+     * 她主动发图：按她自己给的描述生成一张并直接贴到聊天里。
+     *
+     * 与 [share] 的区别是这里没有正则门槛——她想给用户看就发，用户没要求也发。
+     * [description] 是她对这张图的描述；留空则按当前对话语境决定拍什么。
+     *
+     * @return 给模型看的一句话：成功说明已发出，失败说明原因。
+     */
+    suspend fun generateAndPost(description: String, selfie: Boolean?): String {
+        val image = settings().image
+        if (!image.enabled) return "发图开关是关着的，这次没发出去。"
+        if (generate == null) return "现在没有可用的生图通道，这次没发出去。"
+        if (!sharing.tryLock()) return "正在发上一张，这次没发出去。"
+        try {
+            val portrait = portraitFile()
+            val wantSelfie = selfie ?: (image.includeSelfie && portrait != null)
+            val useSelfie = wantSelfie && portrait != null
+            val context = description.ifBlank { recentContext() }
+            val prompt = promptFor(useSelfie, context)
+            if (prompt.isBlank()) return "这次没想好拍什么，没发出去。"
+            val bytes = try {
+                generate.invoke(prompt, if (useSelfie) portrait else null)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            }
+            val saved = bytes?.let(store::save)
+            if (saved == null) return "这次没发出去。"
+            store.markShared(saved.absolutePath)
+            post(saved.absolutePath)
+            return "已经发出去了。"
+        } finally {
+            sharing.unlock()
+        }
+    }
+
+    /** 最近几轮对话的文字，用作发图语境。 */
+    private fun recentContext(): String = items().takeLast(6).mapNotNull { item ->
+        when (item) {
+            is ChatItem.User -> item.text
+            is ChatItem.Assistant -> item.text
+            else -> null
+        }
+    }.joinToString("\n").takeLast(400)
+
     private fun launchShare(userText: String, replyText: String, explicit: Boolean, allowGenerate: Boolean = true) {
         scope.launch(Dispatchers.IO) {
             if (explicit) {
@@ -180,7 +223,6 @@ class ChatImages(
                     feedbackState.value = when (result) {
                         ShareResult.SHARED, ShareResult.IGNORED -> null
                         ShareResult.DISABLED -> ImageRequestFeedback.Disabled
-                        ShareResult.LIMIT_REACHED -> ImageRequestFeedback.LimitReached
                         ShareResult.FAILED -> ImageRequestFeedback.Failed(userText, replyText)
                     }
                 }
@@ -195,7 +237,7 @@ class ChatImages(
         }
     }
 
-    internal enum class ShareResult { SHARED, IGNORED, DISABLED, LIMIT_REACHED, FAILED }
+    internal enum class ShareResult { SHARED, IGNORED, DISABLED, FAILED }
 
     /** 直接跑一次来源选择；[afterReply] 在 IO 线程调用它，测试也用它避免等调度。 */
     internal suspend fun share(
@@ -222,9 +264,7 @@ class ChatImages(
         val wantsToSee = WANT_CUE.containsMatchIn(userText) || EXPLICIT_IMAGE_CUE.containsMatchIn(userText)
         if (!wantsToSee) return ShareResult.IGNORED
 
-        val withinLimit = store.canGenerate(image.dailyLimit)
-        val canGenerate = allowGenerate && withinLimit
-        if (canGenerate) {
+        if (allowGenerate) {
             val portrait = portraitFile()
             val selfie = image.includeSelfie && portrait != null &&
                 SELFIE_CUE.containsMatchIn(userText) && !SCENE_OBJECT.containsMatchIn(userText)
@@ -241,19 +281,18 @@ class ChatImages(
             }
             val saved = bytes?.let(store::save)
             if (saved != null) {
-                store.markGenerated()
                 store.markShared(saved.absolutePath)
                 post(saved.absolutePath)
                 return ShareResult.SHARED
             }
         }
-        // 3. 图库兜底：无 Key、额度用尽或生成失败时仍可分享匹配的图片。
+        // 3. 图库兜底：无 Key 或生成失败时仍可分享匹配的图片。
         scenery.maybePick(context, now())?.let { picked ->
             store.markShared(picked.file)
             post(picked.file)
             return ShareResult.SHARED
         }
-        return if (withinLimit) ShareResult.FAILED else ShareResult.LIMIT_REACHED
+        return ShareResult.FAILED
     }
 
     /** 从聊天记录里挑一张最贴近当前话题的旧图；没有可用文件返回 null。 */

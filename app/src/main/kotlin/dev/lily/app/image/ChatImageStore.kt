@@ -2,18 +2,17 @@ package dev.lily.app.image
 
 import org.json.JSONObject
 import java.io.File
-import java.time.LocalDate
 import java.util.UUID
 
 /**
- * 她主动发图落盘与配额：生成图只写应用私有目录 `<files>/images`。
+ * 她主动发图落盘：生成图只写应用私有目录 `<files>/images`。
  * 复用聊天里出现过的图、图库兜底都只记录路径，不复制文件，不重复占空间。
+ *
+ * 不限生成次数：费用由用户自己的方舟账号承担，这里只保留分享冷却与磁盘清理。
  */
 class ChatImageStore(private val dir: File, private val now: () -> Long = System::currentTimeMillis) {
 
     private val indexFile = File(dir, "index.json")
-    private var day: String = LocalDate.now().toString()
-    private var generatedToday: Int = 0
     private var lastShareAt: Long = 0L
     private var lastSharedPath: String = ""
 
@@ -23,7 +22,6 @@ class ChatImageStore(private val dir: File, private val now: () -> Long = System
 
     @Synchronized
     fun canShare(cooldownMillis: Long): Boolean {
-        rollDay()
         return lastShareAt <= 0 || now() - lastShareAt >= cooldownMillis
     }
 
@@ -34,30 +32,9 @@ class ChatImageStore(private val dir: File, private val now: () -> Long = System
         persist()
     }
 
-    @Synchronized
-    fun canGenerate(limit: Int): Boolean {
-        rollDay()
-        return generatedToday < limit.coerceAtLeast(0)
-    }
-
-    @Synchronized
-    fun markGenerated() {
-        rollDay()
-        generatedToday += 1
-        persist()
-    }
-
-    @Synchronized
-    fun generatedToday(): Int {
-        rollDay()
-        return generatedToday
-    }
-
-    /** 默认角色被彻底删除后，配额与冷却回到初始；索引文件随目录一起删。 */
+    /** 默认角色被彻底删除后，冷却回到初始；索引文件随目录一起删。 */
     @Synchronized
     fun reset() {
-        day = LocalDate.now().toString()
-        generatedToday = 0
         lastShareAt = 0L
         lastSharedPath = ""
     }
@@ -99,25 +76,13 @@ class ChatImageStore(private val dir: File, private val now: () -> Long = System
         }
     }
 
-    private fun rollDay() {
-        val today = LocalDate.now().toString()
-        if (today != day) {
-            day = today
-            generatedToday = 0
-            persist()
-        }
-    }
-
     private fun read() {
         if (!indexFile.isFile) return
         runCatching {
             val root = JSONObject(indexFile.readText())
-            day = root.optString("day").ifBlank { LocalDate.now().toString() }
-            generatedToday = root.optInt("generated")
             lastShareAt = root.optLong("lastShareAt")
             lastSharedPath = root.optString("lastSharedPath")
         }.onFailure {
-            generatedToday = 0
             lastShareAt = 0L
             lastSharedPath = ""
         }
@@ -128,8 +93,6 @@ class ChatImageStore(private val dir: File, private val now: () -> Long = System
             dir.mkdirs()
             indexFile.writeText(
                 JSONObject()
-                    .put("day", day)
-                    .put("generated", generatedToday)
                     .put("lastShareAt", lastShareAt)
                     .put("lastSharedPath", lastSharedPath)
                     .toString(),

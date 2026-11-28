@@ -49,7 +49,6 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
             putPersona(stored.persona)
             putLife(stored.life)
             putBoolean(IMAGE_ENABLED, stored.image.enabled)
-            putInt(IMAGE_DAILY_LIMIT, stored.image.dailyLimit)
             putBoolean(IMAGE_SELFIE, stored.image.includeSelfie)
             putString(IMAGE_MODEL, stored.image.effectiveModel)
             putString(EMOJI_STYLE, stored.emojiStyle.name)
@@ -169,8 +168,6 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
             life = life(),
             image = ImageSettings(
                 enabled = plain.getBoolean(IMAGE_ENABLED, defaults.image.enabled),
-                dailyLimit = plain.getInt(IMAGE_DAILY_LIMIT, defaults.image.dailyLimit)
-                    .coerceIn(ImageSettings.DAILY_RANGE),
                 includeSelfie = plain.getBoolean(IMAGE_SELFIE, defaults.image.includeSelfie),
                 model = plain.getString(IMAGE_MODEL, null)?.trim()?.takeIf { it.isNotBlank() }
                     ?: defaults.image.model,
@@ -482,7 +479,6 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
         private const val LIFE_MEDIA = "life.media"
         private const val LIFE_BIO = "life.bio"
         private const val IMAGE_ENABLED = "image.enabled"
-        private const val IMAGE_DAILY_LIMIT = "image.dailyLimit"
         private const val IMAGE_SELFIE = "image.includeSelfie"
         private const val PROACTIVE = "relation.proactive"
         private const val PROACTIVE_MAX = "relation.maxPerDay"

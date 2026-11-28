@@ -59,6 +59,10 @@ class LilyAgent(
     private val idFactory: () -> String = { UUID.randomUUID().toString() },
     /** Extra tools such as MCP servers; their names must not shadow the built-in ones. */
     private val externalTools: ToolProvider? = null,
+    /** 生成并发出一张图；null 表示这台设备发不了图。 */
+    private val sendImage: (suspend (description: String, selfie: Boolean?) -> String)? = null,
+    /** 发一条动态；null 表示这台设备发不了动态。 */
+    private val postDynamic: (suspend (text: String) -> String)? = null,
 ) : Agent {
     private val loop = OperatorLoop(operator, device, sentinel, users, config, safetyAudit)
     private val flows = FlowRunner(loop, users)
@@ -82,9 +86,17 @@ class LilyAgent(
             emit(AgentEvent.Reply(taskId, category.reply))
             return
         }
-        val tools = ChatTools(memory, skills, clock, reminders, externalTools, phoneTasks = config.phoneTasks) { goal, skill ->
-            runPhoneTask(goal, skill, listener, stop)
-        }
+        val tools = ChatTools(
+            memory = memory,
+            skills = skills,
+            clock = clock,
+            reminders = reminders,
+            external = externalTools,
+            phoneTasks = config.phoneTasks,
+            sendImage = sendImage,
+            postDynamic = postDynamic,
+            phoneTask = { goal, skill -> runPhoneTask(goal, skill, listener, stop) },
+        )
         try {
             val builtIn = builtInSpecs()
             val toolSpecs = builtIn + externalSpecs()
@@ -166,8 +178,15 @@ class LilyAgent(
         return finish(outcome.success, outcome.summary, task.steps)
     }
 
-    private fun builtInSpecs(): List<ToolSpec> =
-        if (config.phoneTasks) AgentTools.specs else AgentTools.specs.filter { it.name != AgentTools.PHONE_TASK }
+    private fun builtInSpecs(): List<ToolSpec> = AgentTools.specs.filter { spec ->
+        when (spec.name) {
+            AgentTools.PHONE_TASK -> config.phoneTasks
+            // 这两项是「她的身体」：设备给不了就不出现在清单里，她也就不会假装能做。
+            AgentTools.SEND_IMAGE -> sendImage != null
+            AgentTools.POST_DYNAMIC -> postDynamic != null
+            else -> true
+        }
+    }
 
     /** External tools that do not clash with built-in names; a failing provider simply offers nothing. */
     private suspend fun externalSpecs(): List<ToolSpec> {

@@ -222,7 +222,7 @@ fun SettingsScreen(
                 ) { dialoguePage = true }
                 SettingsHomeRow(
                     "角色发图", Icons.Outlined.Image,
-                    if (stored.image.enabled) "每天最多 ${stored.image.dailyLimit} 张" else "已关闭",
+                    if (stored.image.enabled) "不限次数" else "已关闭",
                 ) { imagePage = true }
                 SettingsHomeRow("主题", Icons.Outlined.Palette, stored.appearance.mode.label) {
                     appearancePage = true
@@ -482,20 +482,6 @@ private fun ImageSettingsScreen(graph: AppGraph, onBack: () -> Unit) {
             )
         }
         if (stored.image.enabled) {
-            SettingsGroup("每天最多生成") {
-                Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                    listOf(1, 3, 5).forEach { limit ->
-                        FilterChip(
-                            selected = stored.image.dailyLimit == limit,
-                            onClick = {
-                                store.save(store.current.copy(image = store.current.image.copy(dailyLimit = limit)))
-                            },
-                            label = { Text("$limit 张") },
-                        )
-                    }
-                }
-                SettingsNote("用聊天模型的方舟 Key 生成，一张约 ¥0.12。达到上限后可分享已有图片。")
-            }
             SettingsGroup("图片模型") {
                 OutlinedTextField(
                     value = stored.image.model,
@@ -508,6 +494,9 @@ private fun ImageSettingsScreen(graph: AppGraph, onBack: () -> Unit) {
                     modifier = Modifier.fillMaxWidth(),
                 )
                 SettingsNote("默认 ${ImageSettings.DEFAULT_MODEL}；留空也会回退到这个默认值。")
+            }
+            SettingsGroup("费用") {
+                SettingsNote("用聊天模型的方舟 Key 生成，一张约 ¥0.12。生成次数不限，费用从你的方舟账号直接扣。")
             }
             SettingsGroup("自拍") {
                 SettingsRow(

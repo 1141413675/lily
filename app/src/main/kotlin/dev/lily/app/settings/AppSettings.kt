@@ -256,12 +256,13 @@ data class AsrSettings(
 enum class ReplyMode { AUTO, TEXT, VOICE, CALL }
 
 /**
- * 她主动发图：开关、每天最多生成几张（不含复用与图库）、生成内容是否包含自拍。
+ * 她主动发图：开关、生成内容是否包含自拍。
  * 自拍用头像做参考图；没设头像时自动退回生活场景。
+ *
+ * 不限次数：一张图约 ¥0.12，费用由用户自己的方舟账号承担，所以这里不设每日上限。
  */
 data class ImageSettings(
     val enabled: Boolean = true,
-    val dailyLimit: Int = 3,
     val includeSelfie: Boolean = true,
     /** 方舟图片模型，可在「发图」页改；留空时回退 [DEFAULT_MODEL]。 */
     val model: String = DEFAULT_MODEL,
@@ -269,8 +270,6 @@ data class ImageSettings(
     val effectiveModel: String get() = model.trim().ifBlank { DEFAULT_MODEL }
 
     companion object {
-        val DAILY_RANGE = 1..10
-
         /** 方舟当前在售的 Seedream 5.0 flash；旧 4.0 已下线。 */
         const val DEFAULT_MODEL = "doubao-seedream-5-0-flash-260915"
     }

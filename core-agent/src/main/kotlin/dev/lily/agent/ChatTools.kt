@@ -33,6 +33,10 @@ internal class ChatTools(
     private val external: ToolProvider?,
     private val phoneTasks: Boolean = true,
     private val phoneTask: suspend (goal: String, skill: String?) -> AgentEvent.PhoneTaskFinished,
+    /** 生成并发出一张图；null 表示这台设备没有这项能力（工具不会出现在清单里）。 */
+    private val sendImage: (suspend (description: String, selfie: Boolean?) -> String)? = null,
+    /** 发一条动态；null 表示这台设备没有这项能力。 */
+    private val postDynamic: (suspend (text: String) -> String)? = null,
 ) {
     suspend fun execute(call: ToolCall, taskId: String, emit: (AgentEvent) -> Unit): String = try {
         val args = parseArgs(call.argumentsJson)
@@ -44,6 +48,10 @@ internal class ChatTools(
             AgentTools.LIST_SKILLS -> listSkills()
             AgentTools.REMINDER_SET -> reminder(args)
             AgentTools.PHONE_TASK -> if (phoneTasks) phone(args) else error("这里不能操作手机，请用其他工具或告诉用户自己操作")
+            AgentTools.SEND_IMAGE -> sendImage?.let { image(args, it) }
+                ?: error("这里发不出图片，请告诉用户你没法现在拍给他看")
+            AgentTools.POST_DYNAMIC -> postDynamic?.let { dynamic(args, it) }
+                ?: error("这里发不了动态，请告诉用户你没法现在发一条")
             else -> external(call, taskId, emit)
         }
     } catch (e: CancellationException) {
@@ -189,5 +197,23 @@ internal class ChatTools(
             put("summary", finished.summary)
             put("steps", finished.steps)
         }.toString()
+    }
+
+    /** 她主动发图：描述可以留空，由 App 按当前语境决定拍什么。 */
+    private suspend fun image(args: JsonObject, send: suspend (String, Boolean?) -> String): String {
+        val description = JsonText.string(args, "description").orEmpty()
+        val selfie = when (val raw = JsonText.string(args, "selfie")?.trim()?.lowercase()) {
+            "true" -> true
+            "false" -> false
+            else -> null
+        }
+        return send(description.trim(), selfie)
+    }
+
+    /** 她主动发动态：正文必须由她自己写，App 只负责落盘。 */
+    private suspend fun dynamic(args: JsonObject, post: suspend (String) -> String): String {
+        val text = required(args, "text").trim()
+        if (text.isEmpty()) throw ToolArgumentException("text 不能为空")
+        return post(text)
     }
 }

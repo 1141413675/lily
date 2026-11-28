@@ -355,6 +355,12 @@ class AppGraph(context: Context, private val llm: LlmClientFactory = LlmClients.
             uiVisible = uiVisible,
             appName = app.getString(R.string.app_name),
             decisionFile = File(app.filesDir, "proactive/last-decision.json"),
+            // 主动开口时她也能顺手发一张图或一条动态。
+            sendImage = { description, selfie -> chatImages.generateAndPost(description, selfie) },
+            postDynamic = { text ->
+                val post = feedStore.addHer(text, System.currentTimeMillis(), dev.lily.app.feed.FeedStore.SOURCE_MODEL)
+                if (post == null) "这条动态没能发出去。" else "动态已经发出去了。"
+            },
         )
     }
 
@@ -459,6 +465,17 @@ class AppGraph(context: Context, private val llm: LlmClientFactory = LlmClients.
             safetyAudit = { safetyStore.record(it) },
             refusal = refusals,
             externalTools = tools,
+            // 「她的身体」：设备给不了就不给她这个工具，她也就不会假装能做到。
+            sendImage = if (current.image.enabled) {
+                { description, selfie -> chatImages.generateAndPost(description, selfie) }
+            } else {
+                null
+            },
+            postDynamic = { text ->
+                val at = System.currentTimeMillis()
+                val post = feedStore.addHer(text, at, dev.lily.app.feed.FeedStore.SOURCE_MODEL)
+                if (post == null) "这条动态没能发出去。" else "动态已经发出去了。"
+            },
         )
 
     /** 默认角色的会话外壳；彻底删除后可丢弃重建，让记忆索引与缓存一起换新。 */
@@ -687,6 +704,11 @@ class AppGraph(context: Context, private val llm: LlmClientFactory = LlmClients.
                 uiVisible = uiVisible,
                 appName = app.getString(R.string.app_name),
                 decisionFile = File(files, "proactive/last-decision.json"),
+                sendImage = { description, selfie -> chatImages.generateAndPost(description, selfie) },
+                postDynamic = { text ->
+                    val post = feedStore.addHer(text, System.currentTimeMillis(), dev.lily.app.feed.FeedStore.SOURCE_MODEL)
+                    if (post == null) "这条动态没能发出去。" else "动态已经发出去了。"
+                },
             )
         }
         private val sentinel by lazy { newSentinel(session) }

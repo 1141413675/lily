@@ -76,13 +76,11 @@ class ImageGenerationTest {
     }
 
     @Test
-    fun storeCountsGeneratedPerDayAndCleansOldFiles() {
+    fun storeCleansOldFilesAndHasNoDailyQuota() {
         val dir = createTempDirectory("chat-images").toFile()
         var now = 1_000L
         val store = ChatImageStore(dir) { now }
-        assertTrue(store.canGenerate(3))
-        repeat(3) { store.markGenerated() }
-        assertFalse(store.canGenerate(3))
+        // 不限次数：store 上不再有 canGenerate / markGenerated 这样的配额口。
 
         val saved = store.save("x".toByteArray())
         assertNotNull(saved)
@@ -117,7 +115,7 @@ class ImageGenerationTest {
         var generates = 0
         val chatImages = ChatImages(
             scope = this,
-            settings = { AppSettings(image = ImageSettings(enabled = true, dailyLimit = 1)) },
+            settings = { AppSettings(image = ImageSettings(enabled = true)) },
             items = { listOf(ChatItem.AssistantImage(1, old.absolutePath)) },
             portraitFile = { null },
             store = ChatImageStore(File(root, "images")),
@@ -144,10 +142,15 @@ class ImageGenerationTest {
         assertEquals(1, posted.size)
         assertTrue(File(posted.single()).isFile)
 
-        assertEquals(ChatImages.ShareResult.LIMIT_REACHED, chatImages.share("再发一张照片", ""))
+        // 不限次数：再要一张就再生成一张，不会撞上限。
+        posted.clear()
+        chatImages.share("再发一张照片", "")
+        assertEquals(2, generates)
+        assertEquals(1, posted.size)
+
         assertEquals(ChatImages.ShareResult.IGNORED, chatImages.share("我今天拍的照片很好看", ""))
         assertEquals(ChatImages.ShareResult.IGNORED, chatImages.share("别给我发张照片", ""))
-        assertEquals(1, generates)
+        assertEquals(2, generates)
     }
 
     @Test
@@ -158,7 +161,7 @@ class ImageGenerationTest {
         var attempts = 0
         val chatImages = ChatImages(
             scope = this,
-            settings = { AppSettings(image = ImageSettings(enabled = true, dailyLimit = 3)) },
+            settings = { AppSettings(image = ImageSettings(enabled = true)) },
             items = { emptyList() },
             portraitFile = { null },
             store = ChatImageStore(File(root, "images")),
@@ -196,7 +199,7 @@ class ImageGenerationTest {
         var generates = 0
         val chatImages = ChatImages(
             scope = this,
-            settings = { AppSettings(image = ImageSettings(enabled = true, dailyLimit = 3)) },
+            settings = { AppSettings(image = ImageSettings(enabled = true)) },
             items = { emptyList() },
             portraitFile = { null },
             store = ChatImageStore(File(root, "images")),
@@ -228,7 +231,7 @@ class ImageGenerationTest {
         var generates = 0
         val chatImages = ChatImages(
             scope = this,
-            settings = { AppSettings(image = ImageSettings(enabled = true, dailyLimit = 3)) },
+            settings = { AppSettings(image = ImageSettings(enabled = true)) },
             items = { emptyList() },
             portraitFile = { null },
             store = ChatImageStore(File(root, "images")),

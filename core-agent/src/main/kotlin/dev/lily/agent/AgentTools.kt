@@ -17,6 +17,8 @@ object AgentTools {
     const val LIST_SKILLS = "list_skills"
     const val REMINDER_SET = "reminder_set"
     const val PHONE_TASK = "phone_task"
+    const val SEND_IMAGE = "send_image"
+    const val POST_DYNAMIC = "post_dynamic"
 
     val specs: List<ToolSpec> = listOf(
         ToolSpec(
@@ -71,6 +73,23 @@ object AgentTools {
                 listOf("goal"),
                 "goal" to str("具体目标，包含关键参数，如 用高德打车回家（北京市海淀区某某路 1 号），选快车"),
                 "skill" to str("可选，使用的技能名"),
+            ),
+        ),
+        ToolSpec(
+            SEND_IMAGE,
+            "生成并发出一张图，让用户看到你此刻的样子或你眼前的东西。可以主动调用，不用等用户开口。",
+            schema(
+                emptyList(),
+                "description" to str("这张图的内容，一句中文描述，如 窗外的雨和一杯热茶"),
+                "selfie" to str("可选，是否要你本人出镜（true/false）；不填按内容自己判断"),
+            ),
+        ),
+        ToolSpec(
+            POST_DYNAMIC,
+            "发一条动态到「动态」页，写你今天做了什么、看到了什么、心情如何。可以主动调用，不用等用户要求。",
+            schema(
+                listOf("text"),
+                "text" to str("动态正文，一到两句中文，不超过 45 字；用第一人称，不写问候语"),
             ),
         ),
     )

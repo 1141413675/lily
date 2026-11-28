@@ -37,6 +37,10 @@ class ProactiveEngine(
     private val decisionFile: File? = null,
     private val clock: () -> Long = System::currentTimeMillis,
     private val log: (String) -> Unit = { Log.i(TAG, it) },
+    /** 主动开口时顺带发一张图；null 表示这台设备发不了。 */
+    private val sendImage: (suspend (description: String, selfie: Boolean?) -> String)? = null,
+    /** 主动开口时顺带发一条动态；null 表示这台设备发不了。 */
+    private val postDynamic: (suspend (text: String) -> String)? = null,
 ) {
     private val running = AtomicBoolean(false)
 
@@ -142,11 +146,34 @@ class ProactiveEngine(
         if (!chat.configured) return fallback
         return try {
             val client = llm.create(chat.toModelConfig(ModelRole.CHAT))
+            val prompt = RelationshipPrompt.opening(relationship, config, trigger, name = current.persona.nameOr(appName))
             val response = withTimeout(COMPOSE_TIMEOUT_MS) {
-                val prompt = RelationshipPrompt.opening(relationship, config, trigger, name = current.persona.nameOr(appName))
-                client.complete(ChatRequest(listOf(ChatMessage.system(prompt))))
+                client.complete(
+                    ChatRequest(
+                        listOf(ChatMessage.system(prompt)),
+                        tools = companionTools(),
+                    ),
+                )
             }
-            response.text.trim().takeIf { ProactiveGuard.check(it) == null } ?: fallback
+            // 她可能在这一轮里顺带发一张图或一条动态：执行掉，再让她补一句嘴上说的话。
+            val said = if (response.toolCalls.isEmpty()) {
+                response.text
+            } else {
+                runCompanionTools(response.toolCalls)
+                val follow = withTimeout(COMPOSE_TIMEOUT_MS) {
+                    client.complete(
+                        ChatRequest(
+                            listOf(
+                                ChatMessage.system(prompt),
+                                ChatMessage.assistant(response.text.ifBlank { "（已经发出去了）" }),
+                            ),
+                            tools = companionTools(),
+                        ),
+                    )
+                }
+                follow.text
+            }
+            said.trim().takeIf { ProactiveGuard.check(it) == null } ?: fallback
         } catch (e: TimeoutCancellationException) {
             log("proactive: compose timed out")
             fallback
@@ -156,6 +183,73 @@ class ProactiveEngine(
             log("proactive: compose failed (${e.javaClass.simpleName})")
             fallback
         }
+    }
+
+    /** 主动开口时她能用的「身体」：发图与发动态。设备给不了就不给。 */
+    private fun companionTools(): List<dev.lily.api.ToolSpec> = buildList {
+        if (sendImage != null) {
+            add(
+                dev.lily.api.ToolSpec(
+                    dev.lily.agent.AgentTools.SEND_IMAGE,
+                    "生成并发出一张图，让用户看到你此刻的样子或你眼前的东西。",
+                    dev.lily.agent.AgentTools.specs
+                        .first { it.name == dev.lily.agent.AgentTools.SEND_IMAGE }.parameters,
+                ),
+            )
+        }
+        if (postDynamic != null) {
+            add(
+                dev.lily.api.ToolSpec(
+                    dev.lily.agent.AgentTools.POST_DYNAMIC,
+                    "发一条动态到「动态」页，写你今天做了什么、看到了什么、心情如何。",
+                    dev.lily.agent.AgentTools.specs
+                        .first { it.name == dev.lily.agent.AgentTools.POST_DYNAMIC }.parameters,
+                ),
+            )
+        }
+    }
+
+    /** 执行她主动开口时点的工具；失败只记日志，不影响这一句话本身。 */
+    private suspend fun runCompanionTools(calls: List<dev.lily.api.ToolCall>) {
+        for (call in calls) {
+            try {
+                when (call.name) {
+                    dev.lily.agent.AgentTools.SEND_IMAGE -> {
+                        val args = parseArgs(call.argumentsJson)
+                        val description = args["description"]?.toString()?.trim('"', ' ')?.trim().orEmpty()
+                        val selfie = when (args["selfie"]?.toString()?.trim('"')?.lowercase()) {
+                            "true" -> true
+                            "false" -> false
+                            else -> null
+                        }
+                        sendImage?.invoke(description, selfie)?.let { log("proactive: send_image -> $it") }
+                    }
+                    dev.lily.agent.AgentTools.POST_DYNAMIC -> {
+                        val args = parseArgs(call.argumentsJson)
+                        val text = args["text"]?.toString()?.trim('"', ' ')?.trim().orEmpty()
+                        if (text.isNotEmpty()) {
+                            postDynamic?.invoke(text)?.let { log("proactive: post_dynamic -> $it") }
+                        }
+                    }
+                    else -> Unit
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log("proactive: tool ${call.name} failed (${e.javaClass.simpleName})")
+            }
+        }
+    }
+
+    private fun parseArgs(raw: String): Map<String, String> {
+        if (raw.isBlank()) return emptyMap()
+        return runCatching {
+            val obj = kotlinx.serialization.json.Json.parseToJsonElement(raw) as? kotlinx.serialization.json.JsonObject
+                ?: return emptyMap()
+            obj.mapValues { (_, v) ->
+                (v as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()
+            }
+        }.getOrDefault(emptyMap())
     }
 
     companion object {

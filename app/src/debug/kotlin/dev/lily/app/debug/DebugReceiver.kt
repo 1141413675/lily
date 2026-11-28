@@ -57,8 +57,33 @@ class DebugReceiver : BroadcastReceiver() {
                 }.getOrNull()
                 Log.i(TAG, "debug: canPostPromotedNotifications=$allowed")
             }
-            DebugCommand.ReloadSkills -> {
+            is DebugCommand.CompanionTool -> {
+                // 直接触发她的一项能力，用来验证「她能主动发图 / 发动态」这条链路。
                 val pending = goAsync()
+                graph.scope.launch {
+                    try {
+                        val result = when (command.tool) {
+                            dev.lily.agent.AgentTools.SEND_IMAGE ->
+                                graph.chatImages.generateAndPost(command.text, null)
+                            dev.lily.agent.AgentTools.POST_DYNAMIC -> {
+                                val post = graph.feedStore.addHer(
+                                    command.text.ifBlank { "今天有点想说话。" },
+                                    System.currentTimeMillis(),
+                                    dev.lily.app.feed.FeedStore.SOURCE_MODEL,
+                                )
+                                if (post == null) "这条动态没能发出去。" else "动态已经发出去了。"
+                            }
+                            else -> "未知能力 ${command.tool}"
+                        }
+                        Log.i(TAG, "debug: companion tool ${command.tool} -> $result")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "debug: companion tool failed: ${e.message}")
+                    } finally {
+                        pending.finish()
+                    }
+                }
+            }
+            DebugCommand.ReloadSkills -> {                val pending = goAsync()
                 graph.scope.launch {
                     try {
                         graph.startup.await()

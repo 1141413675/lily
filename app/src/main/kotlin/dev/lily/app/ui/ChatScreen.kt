@@ -505,7 +505,6 @@ private fun ChatImageFeedbackRow(
         } else {
             val message = when (feedback) {
                 ImageRequestFeedback.Generating -> ""
-                ImageRequestFeedback.LimitReached -> "今天的图片生成额度已用完"
                 ImageRequestFeedback.Disabled -> "角色发图已关闭，可在「我的」中开启"
                 is ImageRequestFeedback.Failed -> "图片没能生成，请重试"
             }
