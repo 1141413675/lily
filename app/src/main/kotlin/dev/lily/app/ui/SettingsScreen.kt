@@ -482,18 +482,25 @@ private fun ImageSettingsScreen(graph: AppGraph, onBack: () -> Unit) {
             )
         }
         if (stored.image.enabled) {
+            // 方舟一体接管发图时，模型由那边定；这里改了也会被覆盖，干脆只读。
+            val arkDrivesImage = stored.ark.enabled && stored.ark.useImage
             SettingsGroup("图片模型") {
                 OutlinedTextField(
                     value = stored.image.model,
                     onValueChange = {
                         store.save(store.current.copy(image = store.current.image.copy(model = it)))
                     },
+                    enabled = !arkDrivesImage,
                     label = { Text("模型 ID") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
                     modifier = Modifier.fillMaxWidth(),
                 )
-                SettingsNote("默认 ${ImageSettings.DEFAULT_MODEL}；留空也会回退到这个默认值。")
+                if (arkDrivesImage) {
+                    SettingsNote("发图模型由「模型与接口」里的「火山方舟一体」接管，这里改不了。")
+                } else {
+                    SettingsNote("默认 ${ImageSettings.DEFAULT_MODEL}；留空也会回退到这个默认值。")
+                }
             }
             SettingsGroup("费用") {
                 SettingsNote("用聊天模型的方舟 Key 生成，一张约 ¥0.12。生成次数不限，费用从你的方舟账号直接扣。")
