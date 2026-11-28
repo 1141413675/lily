@@ -174,6 +174,8 @@ class ChatImages(
         val image = settings().image
         if (!image.enabled) return "发图开关是关着的，这次没发出去。"
         if (generate == null) return "现在没有可用的生图通道，这次没发出去。"
+        // 冷却：她主动发图也不能连着刷屏，间隔太短就不发。
+        if (!store.canShare(SHARE_COOLDOWN_MS)) return "刚发过一张，等一会儿再发。"
         if (!sharing.tryLock()) return "正在发上一张，这次没发出去。"
         try {
             val portrait = portraitFile()
@@ -320,6 +322,9 @@ class ChatImages(
     }
 
     private companion object {
+        /** 主动发图之间至少隔这么久，防止她连着刷屏。 */
+        const val SHARE_COOLDOWN_MS = 30_000L
+
         /** 直接点名要图片；普通的「你在干嘛」不显示发图状态。 */
         val EXPLICIT_IMAGE_CUE = Regex(
             "(想看看(?:你|现在|此刻|.{0,6}(?:照片|图片|自拍))|给我看看|让我看看|看看你|" +

@@ -357,11 +357,25 @@ class AppGraph(context: Context, private val llm: LlmClientFactory = LlmClients.
             decisionFile = File(app.filesDir, "proactive/last-decision.json"),
             // 主动开口时她也能顺手发一张图或一条动态。
             sendImage = { description, selfie -> chatImages.generateAndPost(description, selfie) },
-            postDynamic = { text ->
-                val post = feedStore.addHer(text, System.currentTimeMillis(), dev.lily.app.feed.FeedStore.SOURCE_MODEL)
-                if (post == null) "这条动态没能发出去。" else "动态已经发出去了。"
-            },
+            postDynamic = { text -> postDynamic(text) },
         )
+    }
+
+    /**
+     * 她发一条动态。
+     *
+     * 走 [FeedEngine.shouldPost] 的同一套频率规则：每天不超过 3 条、间隔至少 4 小时、
+     * 只在 5–22 点。工具调用也必须守规矩，否则她能在深夜连发一串。
+     */
+    private fun postDynamic(text: String): String {
+        val body = text.trim()
+        if (body.isEmpty()) return "要发的内容是空的，没发出去。"
+        val at = System.currentTimeMillis()
+        if (!feed.shouldPost(at, feedStore.posts.value)) {
+            return "今天已经发得够多了，过一会儿再说。"
+        }
+        val post = feedStore.addHer(body, at, dev.lily.app.feed.FeedStore.SOURCE_MODEL)
+        return if (post == null) "这条动态没能发出去。" else "动态已经发出去了。"
     }
 
     /** 做梦（记忆整理）：文件在 `<files>/dream`，规则写进记忆的 `rules/` 下。 */
@@ -471,11 +485,7 @@ class AppGraph(context: Context, private val llm: LlmClientFactory = LlmClients.
             } else {
                 null
             },
-            postDynamic = { text ->
-                val at = System.currentTimeMillis()
-                val post = feedStore.addHer(text, at, dev.lily.app.feed.FeedStore.SOURCE_MODEL)
-                if (post == null) "这条动态没能发出去。" else "动态已经发出去了。"
-            },
+            postDynamic = { text -> postDynamic(text) },
         )
 
     /** 默认角色的会话外壳；彻底删除后可丢弃重建，让记忆索引与缓存一起换新。 */
@@ -704,11 +714,13 @@ class AppGraph(context: Context, private val llm: LlmClientFactory = LlmClients.
                 uiVisible = uiVisible,
                 appName = app.getString(R.string.app_name),
                 decisionFile = File(files, "proactive/last-decision.json"),
-                sendImage = { description, selfie -> chatImages.generateAndPost(description, selfie) },
-                postDynamic = { text ->
-                    val post = feedStore.addHer(text, System.currentTimeMillis(), dev.lily.app.feed.FeedStore.SOURCE_MODEL)
-                    if (post == null) "这条动态没能发出去。" else "动态已经发出去了。"
+                // 和主 Agent 一样：发图关着就不给她这个工具。
+                sendImage = if (current().image.enabled) {
+                    { description, selfie -> chatImages.generateAndPost(description, selfie) }
+                } else {
+                    null
                 },
+                postDynamic = { text -> postDynamic(text) },
             )
         }
         private val sentinel by lazy { newSentinel(session) }

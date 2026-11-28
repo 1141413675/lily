@@ -26,7 +26,7 @@ class ChatTurnTest {
         assertTrue("[[sing:情绪]]" in system)
         assertTrue("- taxi-home: 打车回家" in system)
         assertTrue("places/家" in system && "某某路" in system)
-        assertEquals(AgentTools.specs.map { it.name }, first.tools.map { it.name })
+        assertEquals(builtInToolNames(), first.tools.map { it.name })
 
         h.agent.handle("再说一遍", h.events, h.stop)
         val second = h.chat.requests[1].messages

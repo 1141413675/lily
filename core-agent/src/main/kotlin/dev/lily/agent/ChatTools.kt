@@ -38,6 +38,15 @@ internal class ChatTools(
     /** 发一条动态；null 表示这台设备没有这项能力。 */
     private val postDynamic: (suspend (text: String) -> String)? = null,
 ) {
+    /**
+     * 这一轮里已经用过的「身体」能力。
+     *
+     * 模型可能在一轮里连着调好几次发图或发动态；同一轮里每项只该生效一次，
+     * 否则她能一口气刷出好几条动态。这个集合是每轮新建的（[ChatTools] 每次 handle 都新建），
+     * 所以不影响下一轮。
+     */
+    private val usedCompanionTools = HashSet<String>()
+
     suspend fun execute(call: ToolCall, taskId: String, emit: (AgentEvent) -> Unit): String = try {
         val args = parseArgs(call.argumentsJson)
         when (call.name) {
@@ -201,6 +210,9 @@ internal class ChatTools(
 
     /** 她主动发图：描述可以留空，由 App 按当前语境决定拍什么。 */
     private suspend fun image(args: JsonObject, send: suspend (String, Boolean?) -> String): String {
+        if (!usedCompanionTools.add(AgentTools.SEND_IMAGE)) {
+            return "这一轮已经发过一张了，不用再发。"
+        }
         val description = JsonText.string(args, "description").orEmpty()
         val selfie = when (val raw = JsonText.string(args, "selfie")?.trim()?.lowercase()) {
             "true" -> true
@@ -212,6 +224,9 @@ internal class ChatTools(
 
     /** 她主动发动态：正文必须由她自己写，App 只负责落盘。 */
     private suspend fun dynamic(args: JsonObject, post: suspend (String) -> String): String {
+        if (!usedCompanionTools.add(AgentTools.POST_DYNAMIC)) {
+            return "这一轮已经发过一条了，不用再发。"
+        }
         val text = required(args, "text").trim()
         if (text.isEmpty()) throw ToolArgumentException("text 不能为空")
         return post(text)

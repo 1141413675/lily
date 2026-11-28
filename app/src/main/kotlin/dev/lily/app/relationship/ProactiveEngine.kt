@@ -155,19 +155,20 @@ class ProactiveEngine(
                     ),
                 )
             }
-            // 她可能在这一轮里顺带发一张图或一条动态：执行掉，再让她补一句嘴上说的话。
+            // 她可能在这一轮里顺带发一张图或一条动态：执行掉，把结果回灌，再让她补一句嘴上说的话。
             val said = if (response.toolCalls.isEmpty()) {
                 response.text
             } else {
-                runCompanionTools(response.toolCalls)
+                val results = runCompanionTools(response.toolCalls)
                 val follow = withTimeout(COMPOSE_TIMEOUT_MS) {
                     client.complete(
                         ChatRequest(
                             listOf(
                                 ChatMessage.system(prompt),
-                                ChatMessage.assistant(response.text.ifBlank { "（已经发出去了）" }),
-                            ),
-                            tools = companionTools(),
+                                ChatMessage.assistant(response.text.ifBlank { "（我先把东西发出去）" }),
+                            ) + results,
+                            // 这一轮不再递工具：她已经做完了，再给一次可能重复发。
+                            tools = emptyList(),
                         ),
                     )
                 }
@@ -209,38 +210,56 @@ class ProactiveEngine(
         }
     }
 
-    /** 执行她主动开口时点的工具；失败只记日志，不影响这一句话本身。 */
-    private suspend fun runCompanionTools(calls: List<dev.lily.api.ToolCall>) {
-        for (call in calls) {
-            try {
+    /**
+     * 执行她主动开口时点的工具。
+     *
+     * @return 给模型看的 tool 消息：每条工具调用一条，让模型知道到底成没成。
+     */
+    private suspend fun runCompanionTools(calls: List<dev.lily.api.ToolCall>): List<dev.lily.api.ChatMessage> {
+        // 一次主动开口里，同一项能力只做一次：她可以发图又发动态，但不能一口气发五张图。
+        val used = HashSet<String>()
+        return calls.mapNotNull { call ->
+            val outcome = try {
                 when (call.name) {
                     dev.lily.agent.AgentTools.SEND_IMAGE -> {
-                        val args = parseArgs(call.argumentsJson)
-                        val description = args["description"]?.toString()?.trim('"', ' ')?.trim().orEmpty()
-                        val selfie = when (args["selfie"]?.toString()?.trim('"')?.lowercase()) {
-                            "true" -> true
-                            "false" -> false
-                            else -> null
+                        if (!used.add(call.name)) "这一轮已经发过一张了。"
+                        else {
+                            val args = parseArgs(call.argumentsJson)
+                            val description = args["description"].orEmpty().trim()
+                            val selfie = when (args["selfie"]?.trim()?.lowercase()) {
+                                "true" -> true
+                                "false" -> false
+                                else -> null
+                            }
+                            sendImage?.invoke(description, selfie) ?: "这台设备发不了图。"
                         }
-                        sendImage?.invoke(description, selfie)?.let { log("proactive: send_image -> $it") }
                     }
                     dev.lily.agent.AgentTools.POST_DYNAMIC -> {
-                        val args = parseArgs(call.argumentsJson)
-                        val text = args["text"]?.toString()?.trim('"', ' ')?.trim().orEmpty()
-                        if (text.isNotEmpty()) {
-                            postDynamic?.invoke(text)?.let { log("proactive: post_dynamic -> $it") }
+                        if (!used.add(call.name)) "这一轮已经发过一条了。"
+                        else {
+                            val args = parseArgs(call.argumentsJson)
+                            val text = args["text"].orEmpty().trim()
+                            if (text.isEmpty()) {
+                                "要发的内容是空的，没发出去。"
+                            } else {
+                                postDynamic?.invoke(text) ?: "这台设备发不了动态。"
+                            }
                         }
                     }
-                    else -> Unit
+                    else -> return@mapNotNull null
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 log("proactive: tool ${call.name} failed (${e.javaClass.simpleName})")
+                "这次没能发出去。"
             }
+            log("proactive: ${call.name} -> $outcome")
+            dev.lily.api.ChatMessage.tool(call.id, outcome)
         }
     }
 
+    /** 工具参数：只取字符串值，其余按空处理。 */
     private fun parseArgs(raw: String): Map<String, String> {
         if (raw.isBlank()) return emptyMap()
         return runCatching {

@@ -168,6 +168,9 @@ class Harness(
     val config: AgentConfig = AgentConfig(),
     val clock: () -> Long = { 1000L },
     val lastInteraction: () -> Long? = { null },
+    /** 「她的身体」：发图与发动态。null 表示这台设备没有这项能力。 */
+    val sendImage: (suspend (description: String, selfie: Boolean?) -> String)? = null,
+    val postDynamic: (suspend (text: String) -> String)? = null,
 ) {
     private var ids = 0
     val safetyAudit = mutableListOf<dev.lily.api.SafetyBlock>()
@@ -185,10 +188,30 @@ class Harness(
         lastInteraction = lastInteraction,
         idFactory = { "t${++ids}" },
         safetyAudit = { safetyAudit += it },
+        sendImage = sendImage,
+        postDynamic = postDynamic,
     )
     val events = Events()
     val stop = Stop()
 }
+
+/**
+ * 这台设备实际能给出的内置工具名。
+ *
+ * 「她的身体」（发图 / 发动态）按设备能力裁剪：Harness 默认不给，所以默认清单里没有它们。
+ */
+fun builtInToolNames(
+    sendImage: Boolean = false,
+    postDynamic: Boolean = false,
+): List<String> = AgentTools.specs
+    .filter {
+        when (it.name) {
+            AgentTools.SEND_IMAGE -> sendImage
+            AgentTools.POST_DYNAMIC -> postDynamic
+            else -> true
+        }
+    }
+    .map { it.name }
 
 /** Operator reply JSON for an action object. */
 fun op(action: String, thought: String = "想一想") = "{\"thought\": \"$thought\", \"action\": $action}"
