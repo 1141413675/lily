@@ -117,16 +117,44 @@ adb -s $D shell am broadcast -n dev.lily.app/.debug.DebugReceiver \
 
 ---
 
-## 六、已知的历史遗留（与本次统一无关）
+## 六、已定但还没做的技术决策
+
+### 全双工实时语音改用火山方舟（豆包实时语音模型 3.0 / Seeduplex）
+
+**决策**：全双工走火山方舟，不用现在的阿里云 DashScope。
+
+**现状差距**（`app/src/main/kotlin/dev/lily/app/voice/RealtimeClient.kt`，688 行）：
+
+| | 当前实现 | 豆包 3.0 要求 |
+|---|---|---|
+| 端点 | `wss://dashscope.aliyuncs.com/api-ws/v1/realtime` | `wss://openspeech.bytedance.com/api/v3/duplex/realtime/dialogue` |
+| 模型 | `qwen-omni-turbo-realtime` | 固定 `1.2.6.1` |
+| 鉴权 | `Authorization: Bearer <key>` | `X-Api-Key: <key>` |
+| 会话建立 | `session.update` | **`session.create`（全新事件）** |
+| 输入音频 | pcm | pcm（16000Hz）或 speech_opus；**分片 20ms / 640 字节，发送速率须贴合实时节奏** |
+| 输出音频 | — | `pcm_s16le`（24000Hz）/ `pcm` / `ogg_opus` |
+| 静音保活 | — | 关闭麦克风后须发 `input_audio_mute.commit`，恢复发 `input_audio_mute.uncommit`，否则服务端超时无响应 |
+
+官方文档明确提示：**3.0 采用全新 Realtime 事件协议，与原版本差异较大，接入前务必先读《接入必读》**。
+
+所以这不是「改个 baseUrl」——`RealtimeClient` 的事件协议要整体重写，且通话时的抢话（barge-in）判定、音频格式转换、工具调用（`run_phone_task`）都要跟着适配。
+
+参考：
+- 接入必读：https://docs.volcengine.com/docs/6561/2549732?lang=zh
+- S2S 全双工音色列表：https://docs.volcengine.com/docs/6561/1257544?lang=zh
+
+---
+
+## 七、已知的历史遗留（与本次统一无关）
 
 - `ios-runner` 的 `paymentTapIsBlockedWhenNobodyIsThere` 断言期望「已自动拒绝」，实际是拒答文案「这个得你自己来。付款、密码、验证码这类操作我不会做。」——**模型侧文案改了，测试没跟上**
 - `web-server` 的 `LocalLaunchTest.startMovesToTheNextFreePort` 失败——端口探测环境问题
 - `ios-runner/Main.kt` 原先缺 `is AgentEvent.Notice` 分支导致编译不过，**已修**
-- 仓库仍有 8 个提交未推送到 `origin`（`origin/main` 落后于 `feat/vendor-presets-tts`）
+- 仓库已推送到 `origin`：`origin/main` = `e8be22c`，`origin/feat/lily-unified-ui` 同位置
 
 ---
 
-## 七、备份位置（改错了可以回滚）
+## 八、备份位置（改错了可以回滚）
 
 | 内容 | 路径 |
 |---|---|
@@ -138,10 +166,10 @@ adb -s $D shell am broadcast -n dev.lily.app/.debug.DebugReceiver \
 
 ---
 
-## 八、请注意
+## 九、请注意
 
 - **不要在 `~/Documents/lily` 之外再开一份代码副本。** 之前出问题就是因为两个 AI 各有一份，改到最后两边分叉、装出两个 App。
 - **不要改回 xiaoman / 小满命名**（品牌字标 `LilyMark`、`app_name`、资源文件 `*_lily.xml` 除外——那些是品牌名，故意保留）。
 - **改动先跑单测再提交。** `:app:testDebugUnitTest` 全绿是最低门槛。
 - **改了 UI 记得重新生成截图基线**：`scripts/gradle.sh --online :app:recordPaparazziDebug`，然后用 `:app:verifyPaparazziDebug` 确认。Paparazzi 的基线文件名带包名（`dev.lily.app.ui_*`），改包名或改配色后基线会失配。
-- `feat/lily-unified-ui` 分支**尚未推送**。推送前建议先确认 `origin/main` 的位置（它比 `feat/vendor-presets-tts` 落后 8 个提交）。
+- 全双工要迁到火山方舟，见 §六；动手前先读官方《接入必读》，协议和现在的 DashScope 不是一套。
