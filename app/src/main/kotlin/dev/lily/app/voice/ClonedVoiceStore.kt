@@ -16,10 +16,12 @@ class ClonedVoiceStore(private val dir: File) {
 
     data class ClonedVoice(
         val id: String,
-        /** SiliconFlow 返回的 `speech:...`，合成时直接作为 `voice` 传入。 */
+        /** 云端音色标识：硅基返回 `speech:...`，豆包 3.0 返回 speaker id。合成时直接作为 `voice` 传入。 */
         val uri: String,
         val name: String,
         val createdAt: Long,
+        /** 是哪家做的克隆：音色只能用它那家的引擎。 */
+        val vendor: dev.lily.app.settings.VoiceVendor = dev.lily.app.settings.VoiceVendor.SILICONFLOW,
     )
 
     private val indexFile = File(dir, "index.json")
@@ -34,7 +36,12 @@ class ClonedVoiceStore(private val dir: File) {
 
     /** 写入一条已生成的音色；名称重复时自动加序号，避免列表里分不清。 */
     @Synchronized
-    fun add(uri: String, name: String, now: Long = System.currentTimeMillis()): ClonedVoice {
+    fun add(
+        uri: String,
+        name: String,
+        now: Long = System.currentTimeMillis(),
+        vendor: dev.lily.app.settings.VoiceVendor = dev.lily.app.settings.VoiceVendor.SILICONFLOW,
+    ): ClonedVoice {
         val clean = name.trim().take(12).ifBlank { "我的声音" }
         var unique = clean
         var n = 2
@@ -42,7 +49,7 @@ class ClonedVoiceStore(private val dir: File) {
             unique = "$clean · $n"
             n += 1
         }
-        val voice = ClonedVoice("cv-" + UUID.randomUUID().toString().take(8), uri, unique, now)
+        val voice = ClonedVoice("cv-" + UUID.randomUUID().toString().take(8), uri, unique, now, vendor)
         _voices.value = _voices.value + voice
         persist()
         return voice
@@ -68,6 +75,9 @@ class ClonedVoiceStore(private val dir: File) {
                     uri = uri,
                     name = o.optString("name").ifBlank { "我的声音" },
                     createdAt = o.optLong("createdAt"),
+                    vendor = o.optString("vendor")
+                        ?.let { name -> dev.lily.app.settings.VoiceVendor.entries.firstOrNull { it.name == name } }
+                        ?: dev.lily.app.settings.VoiceVendor.SILICONFLOW,
                 )
             }
         } catch (e: Exception) {
@@ -85,7 +95,8 @@ class ClonedVoiceStore(private val dir: File) {
                         .put("id", v.id)
                         .put("uri", v.uri)
                         .put("name", v.name)
-                        .put("createdAt", v.createdAt),
+                        .put("createdAt", v.createdAt)
+                        .put("vendor", v.vendor.name),
                 )
             }
             indexFile.writeText(JSONObject().put("voices", array).toString())

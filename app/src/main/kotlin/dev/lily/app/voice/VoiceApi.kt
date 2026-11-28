@@ -138,7 +138,8 @@ class VoiceApi {
             VoiceProtocol.OPENAI_COMPATIBLE -> openAiSpeak(config, spoken, instruction)
             VoiceProtocol.MINIMAX -> MiniMaxTts.speak(config, spoken)
             VoiceProtocol.ELEVENLABS -> ElevenLabsTts.speak(config, spoken)
-            // 豆包走到这里说明配置串了，按 OpenAI 兼容处理并留痕。
+            VoiceProtocol.DOUBAO_TTS3 -> DoubaoTts3.speak(config, spoken)
+            // 豆包 2.0 走到这里说明配置串了，按 OpenAI 兼容处理并留痕。
             VoiceProtocol.DOUBAO -> {
                 Log.w("Lily", "tts: doubao vendor reached openai path, vendor=${config.vendor}")
                 openAiSpeak(config, spoken, instruction)

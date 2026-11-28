@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.OutlinedCard
@@ -47,6 +48,7 @@ import dev.lily.app.settings.AppSettings
 import dev.lily.app.AppGraph
 import dev.lily.app.persona.Voices
 import dev.lily.app.voice.ClonedVoiceStore
+import dev.lily.app.voice.DoubaoTts3
 import dev.lily.app.voice.SampleCheck
 import dev.lily.app.voice.SampleRecorder
 import dev.lily.app.voice.Speaker
@@ -84,6 +86,10 @@ internal fun VoiceCloneScreen(
     val currentVoice = Voices.effective(settings.persona.voice, settings.persona.gender)
 
     var step by remember { mutableStateOf(CloneStep.SAMPLE) }
+    // 复刻走哪家：硅基流动（上传录音）或火山方舟 3.0（上传录音后训练音色）。
+    var cloneVendor by remember { mutableStateOf(dev.lily.app.settings.VoiceVendor.SILICONFLOW) }
+    // 火山那套的配置单独拿：它的地址、模型与 Key 与朗读引擎无关。
+    val volcano = settings.tts.configOf(dev.lily.app.settings.VoiceVendor.DOUBAO3)
     var sample by remember { mutableStateOf<File?>(null) }
     var sampleMs by remember { mutableLongStateOf(0L) }
     var advice by remember { mutableStateOf<String?>(null) }
@@ -155,7 +161,12 @@ internal fun VoiceCloneScreen(
         sampleMs = ms
         step = CloneStep.READY
         advice = SampleCheck.advise(file, ms)
-        error = if (ms < MIN_MS) "样本只有 ${ms / 1000} 秒；8–30 秒都可以，8–10 秒效果最好。" else null
+        error = if (ms < sampleRange(cloneVendor).first) {
+            val r = sampleRange(cloneVendor)
+            "样本只有 ${ms / 1000} 秒；${r.first / 1000}–${r.last / 1000} 秒都可以。"
+        } else {
+            null
+        }
     }
 
     fun discardSample() {
@@ -180,9 +191,10 @@ internal fun VoiceCloneScreen(
             }
             val ms = durationMs(file)
             withContext(Dispatchers.Main) {
-                if (ms != null && ms !in MIN_MS..MAX_MS) {
+                val range = sampleRange(cloneVendor)
+                if (ms != null && ms !in range) {
                     file.delete()
-                    error = "样本需要 8–30 秒；当前 ${ms / 1000} 秒。"
+                    error = "样本需要 ${range.first / 1000}–${range.last / 1000} 秒；当前 ${ms / 1000} 秒。"
                     advice = null
                 } else {
                     sample?.delete()
@@ -202,7 +214,7 @@ internal fun VoiceCloneScreen(
             delay(100)
             val ms = recorder.elapsedMs()
             elapsed = (ms / 1000).toInt()
-            if (ms >= MAX_MS) {
+            if (ms >= sampleRange(cloneVendor).last) {
                 finishRecording()
                 break
             }
@@ -274,6 +286,9 @@ internal fun VoiceCloneScreen(
             }
         }
 
+        // 设计音色：不用录音，用一段文字描述（或一张角色图）造一个声音。
+        VoiceDesignCard(graph, settings)
+
         // 克隆新音色
         OutlinedCard(
             modifier = Modifier.fillMaxWidth(),
@@ -285,10 +300,25 @@ internal fun VoiceCloneScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(Space.xs)) {
                     Text("克隆新音色", style = MaterialTheme.typography.titleSmall)
                     Text(
-                        "8–30 秒 · 8–10 秒效果最好",
+                        if (cloneVendor == dev.lily.app.settings.VoiceVendor.DOUBAO3) {
+                            "10–60 秒 · 火山方舟 3.0 训练出的音色只有 3.0 的引擎能用"
+                        } else {
+                            "8–30 秒 · 8–10 秒效果最好"
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = palette.ink2,
                     )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    dev.lily.app.settings.VoiceVendor.entries
+                        .filter { it.supportsVoiceCloning || it == dev.lily.app.settings.VoiceVendor.SILICONFLOW }
+                        .forEach { vendor ->
+                            FilterChip(
+                                selected = cloneVendor == vendor,
+                                onClick = { cloneVendor = vendor; step = CloneStep.SAMPLE; error = null },
+                                label = { Text(vendor.displayName) },
+                            )
+                        }
                 }
                 StepChips(step)
                 when (step) {
@@ -321,14 +351,20 @@ internal fun VoiceCloneScreen(
                             style = MaterialTheme.typography.bodyMedium,
                         )
                         LinearProgressIndicator(
-                            progress = { (elapsed * 1000f / MAX_MS).coerceIn(0f, 1f) },
+                            progress = { (elapsed * 1000f / sampleRange(cloneVendor).last).coerceIn(0f, 1f) },
                             modifier = Modifier.fillMaxWidth(),
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(
-                                enabled = elapsed * 1000L >= MIN_MS,
+                                enabled = elapsed * 1000L >= sampleRange(cloneVendor).first,
                                 onClick = { finishRecording() },
-                            ) { Text(if (elapsed * 1000L >= MIN_MS) "停止并试听" else "还差 ${8 - elapsed} 秒") }
+                            ) {
+                                val r = sampleRange(cloneVendor)
+                                Text(
+                                    if (elapsed * 1000L >= r.first) "停止并试听"
+                                    else "还差 ${(r.first / 1000 - elapsed).coerceAtLeast(0)} 秒",
+                                )
+                            }
                             TextButton(onClick = { discardSample() }) { Text("取消") }
                         }
                     }
@@ -381,26 +417,45 @@ internal fun VoiceCloneScreen(
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        if (!tts.configured) {
+                        val ready = if (cloneVendor == dev.lily.app.settings.VoiceVendor.DOUBAO3) {
+                            volcano.apiKey.isNotBlank()
+                        } else {
+                            tts.configured
+                        }
+                        if (!ready) {
                             Text(
-                                "还没有配置语音朗读（Base URL / 模型 / Key），生成通道先接好，配好 Key 才能用。",
+                                if (cloneVendor == dev.lily.app.settings.VoiceVendor.DOUBAO3) {
+                                    "还没有填豆包 3.0 的 API Key；去「模型与接口 → 语音」里填上才能训练音色。"
+                                } else {
+                                    "还没有配置语音朗读（Base URL / 模型 / Key），生成通道先接好，配好 Key 才能用。"
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.error,
                             )
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(
-                                enabled = consent && name.trim().isNotEmpty() && tts.configured && sample != null,
+                                enabled = consent && name.trim().isNotEmpty() && ready && sample != null,
                                 onClick = {
                                     val file = sample ?: return@Button
                                     error = null
                                     step = CloneStep.UPLOADING
                                     scope.launch {
                                         try {
-                                            val uri = withContext(Dispatchers.IO) {
-                                                api.cloneVoice(tts, name.trim(), SAMPLE_TEXT, file)
+                                            val uri = if (cloneVendor == dev.lily.app.settings.VoiceVendor.DOUBAO3) {
+                                                withContext(Dispatchers.IO) {
+                                                    DoubaoTts3.cloneVoice(
+                                                        config = volcano,
+                                                        audio = file.readBytes(),
+                                                        promptText = SAMPLE_TEXT,
+                                                    ).speakerId
+                                                }
+                                            } else {
+                                                withContext(Dispatchers.IO) {
+                                                    api.cloneVoice(tts, name.trim(), SAMPLE_TEXT, file)
+                                                }
                                             }
-                                            val saved = graph.clones.add(uri, name.trim())
+                                            val saved = graph.clones.add(uri, name.trim(), vendor = cloneVendor)
                                             withContext(Dispatchers.Main) {
                                                 file.delete()
                                                 sample = null
@@ -631,4 +686,134 @@ private fun durationMs(file: File): Long? {
 
 private const val MIN_MS = 8_000L
 private const val MAX_MS = 30_000L
+
+/** 样本时长：硅基 8–30 秒，火山 3.0 要 10–60 秒。 */
+private fun sampleRange(vendor: dev.lily.app.settings.VoiceVendor): LongRange =
+    if (vendor == dev.lily.app.settings.VoiceVendor.DOUBAO3) 10_000L..60_000L else MIN_MS..MAX_MS
 private const val SAMPLE_TEXT = "今天有点累，但我还是想听你说完。你先说，我不急。"
+
+
+/**
+ * 「设计音色」：用文字描述或角色图造一个声音。
+ *
+ * 火山方舟 3.0 的能力：给一句描述（如「女性，语速中等偏快，语调低沉有力」），
+ * 或者给一张角色图，它就画出一个新音色并给一段试听。
+ *
+ * 需要账号下有一个 `S_` 开头的**预付费音色 id**——这是火山那边要先买的，
+ * App 里代劳不了，所以这里让用户自己填。
+ */
+@Composable
+private fun VoiceDesignCard(graph: AppGraph, settings: AppSettings) {
+    val palette = LocalLilyPalette.current
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val volcano = settings.tts.configOf(dev.lily.app.settings.VoiceVendor.DOUBAO3)
+    var speakerId by remember { mutableStateOf("") }
+    var prompt by remember { mutableStateOf("") }
+    var designText by remember { mutableStateOf("") }
+    var working by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+    var created by remember { mutableStateOf<ClonedVoiceStore.ClonedVoice?>(null) }
+
+    OutlinedCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(Radius.lg),
+        colors = CardDefaults.outlinedCardColors(containerColor = palette.surface),
+        border = BorderStroke(1.dp, palette.line2),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(Space.xl), verticalArrangement = Arrangement.spacedBy(Space.md)) {
+            Column(verticalArrangement = Arrangement.spacedBy(Space.xs)) {
+                Text("设计音色", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "不用录音：写一句描述，或用一张角色图，火山给你造一个声音。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.ink2,
+                )
+            }
+            if (volcano.apiKey.isBlank()) {
+                Text(
+                    "还没有填豆包 3.0 的 API Key；去「模型与接口 → 语音」里选「豆包 3.0」并填上 Key。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            OutlinedTextField(
+                value = speakerId,
+                onValueChange = { speakerId = it },
+                label = { Text("预付费音色 ID（S_ 开头）") },
+                placeholder = { Text("S_xxxxx") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = prompt,
+                onValueChange = { prompt = it },
+                label = { Text("想要的音色") },
+                placeholder = { Text("女性，语速中等偏快，语调低沉有力") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = designText,
+                onValueChange = { designText = it },
+                label = { Text("试听文本") },
+                placeholder = { Text("用这段话试一下声音") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    enabled = !working && volcano.apiKey.isNotBlank() &&
+                        speakerId.trim().startsWith("S_") && prompt.isNotBlank(),
+                    onClick = {
+                        working = true
+                        message = null
+                        scope.launch {
+                            val result = runCatching {
+                                withContext(Dispatchers.IO) {
+                                    DoubaoTts3.designVoice(
+                                        config = volcano,
+                                        speakerId = speakerId.trim(),
+                                        textPrompt = prompt.trim(),
+                                        demoText = designText.trim(),
+                                    )
+                                }
+                            }
+                            working = false
+                            result.fold(
+                                onSuccess = { r ->
+                                    if (r.ready) {
+                                        val saved = graph.clones.add(
+                                            r.speakerId,
+                                            prompt.trim().take(12),
+                                            vendor = dev.lily.app.settings.VoiceVendor.DOUBAO3,
+                                        )
+                                        created = saved
+                                        message = "音色设计好了，已加进上面的列表。"
+                                    } else {
+                                        message = "还在设计${if (r.message.isNotBlank()) "：${r.message}" else ""}"
+                                    }
+                                },
+                                onFailure = { message = it.message ?: "设计音色失败" },
+                            )
+                        }
+                    },
+                ) { Text(if (working) "正在设计…" else "设计音色") }
+            }
+            if (message != null) {
+                Text(
+                    message!!,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (created != null) {
+                Text(
+                    "已保存「${created?.name.orEmpty()}」；可以在上面的列表里设为默认。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}

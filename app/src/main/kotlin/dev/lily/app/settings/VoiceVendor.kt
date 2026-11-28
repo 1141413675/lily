@@ -8,6 +8,9 @@ enum class VoiceProtocol {
     /** 豆包语音：WebSocket 双向流，鉴权用 `X-Api-Key` + `X-Api-Resource-Id`。 */
     DOUBAO,
 
+    /** 豆包 3.0：HTTP 单向流式，音色 id 放 URL 路径；支持复刻与设计音色。 */
+    DOUBAO_TTS3,
+
     /** MiniMax：JSON 请求，`data.audio` 是 **hex 编码**（不是 base64）。 */
     MINIMAX,
 
@@ -51,6 +54,12 @@ enum class VoiceVendor(
         ttsModels = listOf("seed-tts-2.0"),
         asrModels = listOf("volc.seedasr.sauc.duration"),
     ),
+    DOUBAO3(
+        displayName = "豆包 3.0",
+        protocol = VoiceProtocol.DOUBAO_TTS3,
+        ttsBaseUrl = "https://voice.cn-beijing.volces.com",
+        ttsModels = listOf("doubao-seed-tts-3.0"),
+    ),
     OPENAI(
         displayName = "OpenAI",
         protocol = VoiceProtocol.OPENAI_COMPATIBLE,
@@ -86,6 +95,9 @@ enum class VoiceVendor(
     /** 这一家管识别吗。 */
     val supportsAsr: Boolean get() = asrModels.isNotEmpty() || protocol == VoiceProtocol.DOUBAO
 
+    /** 这一家能不能做音色复刻与设计。只有豆包 3.0 行。 */
+    val supportsVoiceCloning: Boolean get() = protocol == VoiceProtocol.DOUBAO_TTS3
+
     /** 朗读这一档的初始配置：地址与常用模型预填，Key 留空。 */
     fun ttsPreset() = VoiceSettings(
         baseUrl = ttsBaseUrl,
@@ -118,6 +130,7 @@ enum class VoiceVendor(
         get() = when (this) {
             SILICONFLOW -> "硅基流动的 API Key（sk- 开头）"
             DOUBAO -> "豆包语音的 API Key（控制台「API Key 管理」里取）"
+            DOUBAO3 -> "豆包语音的 API Key（3.0 的音色复刻与设计也要用它）"
             OPENAI -> "OpenAI 的 API Key（sk- 开头）"
             GROQ -> "Groq 的 API Key（gsk_ 开头）"
             MINIMAX -> "MiniMax 的 API Key；部分账号还要填 GroupId"

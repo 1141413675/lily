@@ -201,6 +201,12 @@ data class TtsSettings(
                     ?: dev.lily.app.persona.Voices.doubaoDefault(gender)
                 configOf(vendor).copy(voice = voice, vendor = vendor)
             }
+            VoiceVendor.DOUBAO3 -> {
+                // 3.0 的音色与 2.0 完全不通用；复刻出来的自定义 id 也要认。
+                val voice = picked.takeIf { it.isNotBlank() }
+                    ?: dev.lily.app.persona.Voices.doubao3Default(gender)
+                configOf(vendor).copy(voice = voice, vendor = vendor)
+            }
             VoiceVendor.SILICONFLOW -> {
                 val voice = picked.takeIf { dev.lily.app.persona.Voices.isSilicon(it) }
                     ?: dev.lily.app.persona.Voices.defaultVoice(gender)

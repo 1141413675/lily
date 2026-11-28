@@ -48,6 +48,7 @@ import dev.lily.app.media.SceneryStore
 import dev.lily.app.persona.Gender
 import dev.lily.app.persona.PersonaSettings
 import dev.lily.app.persona.VoiceOption
+import dev.lily.app.persona.Doubao3Voices
 import dev.lily.app.persona.Voices
 import dev.lily.app.portrait.PortraitStore
 import dev.lily.app.settings.AppSettings
@@ -219,6 +220,9 @@ fun PersonaScreen(
             val current = when (provider) {
                 dev.lily.app.settings.VoiceVendor.DOUBAO ->
                     picked.takeIf { Voices.isDoubao(it) } ?: Voices.doubaoDefault(persona.gender)
+                dev.lily.app.settings.VoiceVendor.DOUBAO3 ->
+                    // 3.0 的音色与 2.0 不通用；复刻出来的自定义 id 也算。
+                    picked.ifBlank { Voices.doubao3Default(persona.gender) }
                 dev.lily.app.settings.VoiceVendor.SILICONFLOW ->
                     picked.takeIf { Voices.isSilicon(it) } ?: Voices.defaultVoice(persona.gender)
                 // 其它家音色 id 各不相同：人设里选的那个就用自己的，没选就用这一家的默认。
@@ -233,10 +237,10 @@ fun PersonaScreen(
                 )
                 TextButton(
                     onClick = {
-                        val fallback = if (provider == dev.lily.app.settings.VoiceVendor.DOUBAO) {
-                            Voices.doubaoDefault(persona.gender)
-                        } else {
-                            Voices.defaultVoice(persona.gender)
+                        val fallback = when (provider) {
+                            dev.lily.app.settings.VoiceVendor.DOUBAO -> Voices.doubaoDefault(persona.gender)
+                            dev.lily.app.settings.VoiceVendor.DOUBAO3 -> Voices.doubao3Default(persona.gender)
+                            else -> Voices.defaultVoice(persona.gender)
                         }
                         update(persona.copy(voice = fallback, voiceChosen = true))
                     },
@@ -253,8 +257,16 @@ fun PersonaScreen(
                 )
             }
             // 当前音色：抬成一张大卡，一眼看到现在用的是哪一个。
-            val femaleVoices = if (provider == dev.lily.app.settings.VoiceVendor.DOUBAO) Voices.DOUBAO_FEMALE else Voices.FEMALE
-            val maleVoices = if (provider == dev.lily.app.settings.VoiceVendor.DOUBAO) Voices.DOUBAO_MALE else Voices.MALE
+            val femaleVoices = when (provider) {
+                dev.lily.app.settings.VoiceVendor.DOUBAO -> Voices.DOUBAO_FEMALE
+                dev.lily.app.settings.VoiceVendor.DOUBAO3 -> Doubao3Voices.FEMALE
+                else -> Voices.FEMALE
+            }
+            val maleVoices = when (provider) {
+                dev.lily.app.settings.VoiceVendor.DOUBAO -> Voices.DOUBAO_MALE
+                dev.lily.app.settings.VoiceVendor.DOUBAO3 -> Doubao3Voices.MALE
+                else -> Voices.MALE
+            }
             val cloneVoices = clones.map { PickerVoice(it.uri, it.name, null) }
             val currentName = Voices.of(current)?.label?.substringBeforeLast(" ")
                 ?: cloneVoices.firstOrNull { it.id == current }?.name

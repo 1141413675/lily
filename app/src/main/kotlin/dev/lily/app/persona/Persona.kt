@@ -318,11 +318,32 @@ object Voices {
         Gender.UNSPECIFIED -> DOUBAO
     }
 
-    /** 硅基音色（含 `speech:` 克隆 uri）只能用在前者；豆包 2.0 音色只能用在后者。 */
+    /** 豆包 3.0 按性别分组的官方音色；设置页的 Speaker 选择器直接用这份。 */
+    fun doubao3For(gender: Gender): List<VoiceOption> = Doubao3Voices.forGender(gender)
+
+    /** 豆包 3.0 的默认音色。 */
+    const val DOUBAO3_DEFAULT_FEMALE = "multi_female_tuanzi_v3_uranus_bigtts"
+    const val DOUBAO3_DEFAULT_MALE = "multi_male_m191_v3_uranus_bigtts"
+
+    fun doubao3Default(gender: Gender): String = when (gender) {
+        Gender.MALE -> DOUBAO3_DEFAULT_MALE
+        Gender.FEMALE, Gender.UNSPECIFIED -> DOUBAO3_DEFAULT_FEMALE
+    }
+
+    /** 硅基音色（含 `speech:` 克隆 uri）只能用在前者；豆包音色只能用在豆包。 */
     fun isSilicon(id: String): Boolean = id.startsWith("FunAudioLLM/") || VoiceRouting.isClone(id)
 
+    /**
+     * 豆包 3.0 的音色：`multi_xxx_v3_uranus_bigtts`，以及复刻出来的自定义音色 id。
+     *
+     * 3.0 与 2.0 的 id 尾缀都是 `_uranus_bigtts`，所以要先看有没有 `_v3_`。
+     */
+    fun isDoubao3(id: String): Boolean =
+        id.endsWith("_v3_uranus_bigtts") || Doubao3Voices.is3(id)
+
     /** 只认 2.0 的 `*_uranus_bigtts`：v1 的 BVxxx 音色在 2.0 下会直接报错。 */
-    fun isDoubao(id: String): Boolean = id.endsWith("_uranus_bigtts") || DOUBAO.any { it.id == id }
+    fun isDoubao(id: String): Boolean =
+        !isDoubao3(id) && (id.endsWith("_uranus_bigtts") || DOUBAO.any { it.id == id })
 
     /** 实际用于合成的音色：显式选择优先，留空时按性别默认。 */
     fun effective(voice: String, gender: Gender): String = voice.trim().ifBlank { defaultVoice(gender) }
