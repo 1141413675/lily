@@ -35,6 +35,10 @@ data class UnifiedProvider(
     val operatorModel: String = "",
     /** 发图用哪个模型；这家没有生图就留空，仍用原来的设置。 */
     val imageModel: String = "",
+    /** 朗读用哪个模型。 */
+    val ttsModel: String = "",
+    /** 语音识别用哪个模型。 */
+    val asrModel: String = "",
     /**
      * 火山引擎 Access Key ID。
      *
@@ -84,6 +88,6 @@ data class UnifiedProvider(
 
     override fun toString() =
         "UnifiedProvider(vendor=$vendor, enabled=$enabled, chatModel=$chatModel, " +
-            "operatorModel=$operatorModel, imageModel=$imageModel, " +
-            "apiKey=${if (apiKey.isEmpty()) "<unset>" else "***"})"
+            "operatorModel=$operatorModel, imageModel=$imageModel, ttsModel=$ttsModel, " +
+            "asrModel=$asrModel, apiKey=${if (apiKey.isEmpty()) "<unset>" else "***"})"
 }

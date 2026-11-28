@@ -1,9 +1,8 @@
 package dev.lily.app.voice
 
-import dev.lily.app.settings.AsrProvider
 import dev.lily.app.settings.AsrSettings
-import dev.lily.app.settings.TtsProvider
 import dev.lily.app.settings.VoiceSettings
+import dev.lily.app.settings.VoiceVendor
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.int
@@ -26,7 +25,7 @@ class DoubaoAsrTest {
     private val doubao = VoiceSettings(
         baseUrl = VoiceSettings.DOUBAO_ASR_BASE_URL,
         apiKey = "api-key",
-        provider = TtsProvider.DOUBAO,
+        vendor = VoiceVendor.DOUBAO,
         resourceId = VoiceSettings.DOUBAO_ASR_RESOURCE_ID,
     )
 
@@ -164,26 +163,28 @@ class DoubaoAsrTest {
     // ---- 配置与硅基回落 ----
 
     @Test fun doubaoNeedsOnlyApiKeyAndFallsBackOnlyWhenSiliconIsConfigured() {
-        val asr = AsrSettings(provider = AsrProvider.DOUBAO, doubao = doubao)
+        val asr = AsrSettings(vendor = VoiceVendor.DOUBAO, byVendor = mapOf(VoiceVendor.DOUBAO to doubao))
         assertTrue(asr.configured)
         assertNull(asr.siliconFallback)
         assertTrue(asr.missing.isEmpty())
 
-        val unconfigured = asr.copy(doubao = doubao.copy(apiKey = ""))
+        val unconfigured = asr.copy(byVendor = asr.byVendor + (VoiceVendor.DOUBAO to doubao.copy(apiKey = "")))
         assertFalse(unconfigured.configured)
         assertEquals(listOf("API Key"), unconfigured.missing)
 
         val withSilicon = asr.copy(
-            silicon = VoiceSettings(
-                baseUrl = VoiceSettings.DEFAULT_BASE_URL,
-                model = VoiceSettings.DEFAULT_ASR_MODEL,
-                apiKey = "sk-test",
-            ),
+            byVendor = asr.byVendor + (
+                VoiceVendor.SILICONFLOW to VoiceSettings(
+                    baseUrl = VoiceSettings.DEFAULT_BASE_URL,
+                    model = VoiceSettings.DEFAULT_ASR_MODEL,
+                    apiKey = "sk-test",
+                )
+                ),
         )
         assertNotNull(withSilicon.siliconFallback)
 
         // 留空 Resource ID 时用官方默认小时版，不影响可用性。
-        val defaulted = AsrSettings(provider = AsrProvider.DOUBAO, doubao = doubao.copy(resourceId = " "))
+        val defaulted = AsrSettings(vendor = VoiceVendor.DOUBAO, byVendor = mapOf(VoiceVendor.DOUBAO to doubao.copy(resourceId = " ")))
         assertEquals(VoiceSettings.DOUBAO_ASR_RESOURCE_ID, defaulted.resourceId)
         assertTrue(defaulted.configured)
     }

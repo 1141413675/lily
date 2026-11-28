@@ -62,10 +62,10 @@ class UnifiedProviderTest {
     fun unifiedModeAlsoCoversVoiceForVolcano() {
         val settings = form(mode = ProvisioningMode.UNIFIED).toSettings()!!
 
-        assertEquals(TtsProvider.DOUBAO, settings.tts.provider)
-        assertEquals("ark-test", settings.tts.doubao.apiKey)
-        assertEquals(AsrProvider.DOUBAO, settings.asr.provider)
-        assertEquals("ark-test", settings.asr.doubao.apiKey)
+        assertEquals(VoiceVendor.DOUBAO, settings.tts.vendor)
+        assertEquals("ark-test", settings.tts.configOf(VoiceVendor.DOUBAO).apiKey)
+        assertEquals(VoiceVendor.DOUBAO, settings.asr.vendor)
+        assertEquals("ark-test", settings.asr.configOf(VoiceVendor.DOUBAO).apiKey)
         assertEquals("ark-test", settings.realtime.apiKey)
     }
 
@@ -76,7 +76,7 @@ class UnifiedProviderTest {
 
         assertEquals(ModelVendor.DEEPSEEK, settings.chat.vendor)
         assertEquals("ark-test", settings.chat.apiKey)
-        assertEquals(TtsProvider.SILICONFLOW, settings.tts.provider)
+        assertEquals(VoiceVendor.SILICONFLOW, settings.tts.vendor)
     }
 
     @Test
@@ -86,7 +86,7 @@ class UnifiedProviderTest {
         assertEquals(ModelVendor.OPENAI, settings.chat.vendor)
         assertEquals("sk-openai", settings.chat.apiKey)
         assertEquals("gpt-4.1-mini", settings.operator.model)
-        assertEquals(TtsProvider.SILICONFLOW, settings.tts.provider)
+        assertEquals(VoiceVendor.SILICONFLOW, settings.tts.vendor)
     }
 
     @Test

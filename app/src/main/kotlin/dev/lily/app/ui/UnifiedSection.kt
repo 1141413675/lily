@@ -141,14 +141,17 @@ internal fun UnifiedSection(
 
     UnifiedModelField(
         label = stringResource(R.string.models_ark_model_chat),
+        hint = stringResource(R.string.models_ark_model_chat_hint),
         value = form.chatModel,
         vendor = form.vendor,
         onChange = { onChange(form.copy(chatModel = it)) },
     )
     UnifiedModelField(
         label = stringResource(R.string.models_ark_model_operator),
+        hint = stringResource(R.string.models_ark_model_operator_hint),
         value = form.operatorModel,
         vendor = form.vendor,
+        requireVision = true,
         onChange = { onChange(form.copy(operatorModel = it)) },
     )
     if (form.vendor == ModelVendor.ARK) {
@@ -158,6 +161,19 @@ internal fun UnifiedSection(
             vendor = form.vendor,
             imageOnly = true,
             onChange = { onChange(form.copy(imageModel = it)) },
+        )
+        // 语音与识别也归方舟：豆包语音的模型在这一起挑。
+        UnifiedVoiceModelField(
+            label = stringResource(R.string.models_ark_model_tts),
+            value = form.ttsModel,
+            choices = dev.lily.app.settings.VoiceVendor.DOUBAO.ttsModels,
+            onChange = { onChange(form.copy(ttsModel = it)) },
+        )
+        UnifiedVoiceModelField(
+            label = stringResource(R.string.models_ark_model_asr),
+            value = form.asrModel,
+            choices = dev.lily.app.settings.VoiceVendor.DOUBAO.asrModels,
+            onChange = { onChange(form.copy(asrModel = it)) },
         )
     } else {
         SettingsNote(stringResource(R.string.models_unified_no_image_hint))
@@ -243,6 +259,47 @@ private fun ArkAccountSection(
 }
 
 /**
+ * 语音模型的选择。
+ *
+ * 豆包语音的模型不多，直接列出即可；没选就用那家的默认。
+ */
+@Composable
+private fun UnifiedVoiceModelField(
+    label: String,
+    value: String,
+    choices: List<String>,
+    onChange: (String) -> Unit,
+) {
+    var menu by remember { mutableStateOf(false) }
+    FieldLabel(label) {
+        Box {
+            OutlinedTextField(
+                value = value,
+                onValueChange = onChange,
+                singleLine = true,
+                trailingIcon = {
+                    IconButton(onClick = { menu = true }, enabled = choices.isNotEmpty()) {
+                        Icon(Icons.Filled.ArrowDropDown, contentDescription = stringResource(R.string.models_pick_model))
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                choices.forEach { id ->
+                    DropdownMenuItem(
+                        text = { Text(id) },
+                        onClick = {
+                            menu = false
+                            onChange(id)
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
  * 拉官方价格并覆盖价格表。
  *
  * 拉不到就保持内置快照——界面永远有价格，不会空着。
@@ -271,7 +328,9 @@ private fun UnifiedModelField(
     label: String,
     value: String,
     vendor: ModelVendor,
+    hint: String = "",
     imageOnly: Boolean = false,
+    requireVision: Boolean = false,
     onChange: (String) -> Unit,
 ) {
     var menu by remember { mutableStateOf(false) }
@@ -306,6 +365,12 @@ private fun UnifiedModelField(
                                 Text(model?.displayName ?: id)
                                 if (model != null) {
                                     Text(model.priceText, style = MaterialTheme.typography.bodySmall)
+                                    if (!model.vision) {
+                                        Text(
+                                            stringResource(R.string.models_ark_text_only),
+                                            style = MaterialTheme.typography.labelSmall,
+                                        )
+                                    }
                                 }
                             }
                         },
@@ -318,6 +383,7 @@ private fun UnifiedModelField(
             }
         }
     }
+    if (hint.isNotBlank()) SettingsNote(hint)
 
     if (selected != null) {
         SettingsNote(selected.priceText)
@@ -327,6 +393,10 @@ private fun UnifiedModelField(
             dev.lily.app.settings.ArkModel.TYPICAL_OUTPUT_TOKENS,
         )
         SettingsNote(stringResource(R.string.models_ark_estimate, cost))
+        // 操作模型必须能看图，否则它看不清屏幕，操作会一直失败。
+        if (requireVision && !selected.vision) {
+            SettingsNote(stringResource(R.string.models_ark_needs_vision))
+        }
     } else if (value.isNotBlank()) {
         SettingsNote(stringResource(R.string.models_ark_price_unknown))
     }

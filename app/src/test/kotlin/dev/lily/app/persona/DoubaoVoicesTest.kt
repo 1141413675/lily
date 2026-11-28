@@ -1,7 +1,8 @@
 package dev.lily.app.persona
 
-import dev.lily.app.settings.TtsProvider
 import dev.lily.app.settings.TtsSettings
+import dev.lily.app.settings.VoiceSettings
+import dev.lily.app.settings.VoiceVendor
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -26,10 +27,10 @@ class DoubaoVoicesTest {
     @Test
     fun `default speaker comes from the agent gender, not a global value`() {
         val defaults = TtsSettings()
-        assertEquals("", defaults.doubao.voice, "设置里不再保存全局音色")
-        assertEquals("", defaults.silicon.voice, "设置里不再保存全局音色")
+        assertEquals("", defaults.configOf(VoiceVendor.DOUBAO).voice, "设置里不再保存全局音色")
+        assertEquals("", defaults.configOf(VoiceVendor.SILICONFLOW).voice, "设置里不再保存全局音色")
 
-        val doubao = TtsSettings(provider = TtsProvider.DOUBAO)
+        val doubao = TtsSettings(vendor = VoiceVendor.DOUBAO)
         assertEquals(Voices.DOUBAO_DEFAULT_FEMALE, doubao.request("", Gender.FEMALE).voice)
         assertEquals(Voices.DOUBAO_DEFAULT_FEMALE, doubao.request("", Gender.UNSPECIFIED).voice)
         assertEquals(Voices.DOUBAO_DEFAULT_MALE, doubao.request("", Gender.MALE).voice)
@@ -41,21 +42,25 @@ class DoubaoVoicesTest {
     @Test
     fun `global voice value is ignored even if an old build stored one`() {
         val doubao = TtsSettings(
-            provider = TtsProvider.DOUBAO,
-            doubao = dev.lily.app.settings.VoiceSettings(
-                baseUrl = dev.lily.app.settings.VoiceSettings.DOUBAO_BASE_URL,
-                voice = "zh_female_cancan_uranus_bigtts",
-                provider = TtsProvider.DOUBAO,
-                resourceId = dev.lily.app.settings.VoiceSettings.DOUBAO_RESOURCE_ID,
+            vendor = VoiceVendor.DOUBAO,
+            byVendor = mapOf(
+                VoiceVendor.DOUBAO to VoiceSettings(
+                    baseUrl = VoiceSettings.DOUBAO_BASE_URL,
+                    voice = "zh_female_cancan_uranus_bigtts",
+                    vendor = VoiceVendor.DOUBAO,
+                    resourceId = VoiceSettings.DOUBAO_RESOURCE_ID,
+                ),
             ),
         )
         assertEquals(Voices.DOUBAO_DEFAULT_MALE, doubao.request("", Gender.MALE).voice)
 
         val silicon = TtsSettings(
-            provider = TtsProvider.SILICONFLOW,
-            silicon = dev.lily.app.settings.VoiceSettings(
-                model = dev.lily.app.settings.VoiceSettings.DEFAULT_TTS_MODEL,
-                voice = "zh_female_cancan_uranus_bigtts",
+            vendor = VoiceVendor.SILICONFLOW,
+            byVendor = mapOf(
+                VoiceVendor.SILICONFLOW to VoiceSettings(
+                    model = VoiceSettings.DEFAULT_TTS_MODEL,
+                    voice = "zh_female_cancan_uranus_bigtts",
+                ),
             ),
         )
         assertEquals(Voices.defaultVoice(Gender.FEMALE), silicon.request("", Gender.FEMALE).voice)

@@ -10,7 +10,7 @@ import dev.lily.app.R
 import dev.lily.app.chat.Emoji
 import dev.lily.app.relationship.RelationshipStore
 import dev.lily.app.settings.AppSettings
-import dev.lily.app.settings.AsrProvider
+import dev.lily.app.settings.VoiceVendor
 import dev.lily.app.settings.AsrSettings
 import dev.lily.app.session.AgentSession
 import dev.lily.app.session.CallOutcome
@@ -696,7 +696,7 @@ class CallController(
     private fun startCapture(): Boolean {
         cancelCapture()
         val asr = settings().asr
-        val session = if (asr.provider == AsrProvider.DOUBAO) openAsrStream(asr) else null
+        val session = if (asr.vendor == VoiceVendor.DOUBAO) openAsrStream(asr) else null
         val sink: ((ByteArray, Int) -> Unit)? =
             session?.let { s -> { bytes: ByteArray, count: Int -> s.sendPcm(bytes, 0, count) } }
         if (!recorder.start(onChunk = sink)) {
@@ -708,7 +708,7 @@ class CallController(
     }
 
     private fun openAsrStream(asr: AsrSettings): DoubaoAsr.Session? = try {
-        DoubaoAsr.open(asr.doubao.copy(resourceId = asr.resourceId))
+        DoubaoAsr.open(asr.active.copy(resourceId = asr.resourceId))
     } catch (e: Exception) {
         // 连不上也继续录，收尾时用硅基兜底，并把原因带上。
         asrStreamError = e.message ?: "豆包语音识别连接失败"
@@ -760,12 +760,12 @@ class CallController(
                 val line = raw?.let { Emoji.strip(it) }
                 if (!line.isNullOrBlank()) return line
                 if (failure == null) failure = "语音识别失败：豆包没有识别出内容。"
-            } else if (asr.provider == AsrProvider.DOUBAO) {
+            } else if (asr.vendor == VoiceVendor.DOUBAO) {
                 failure = utterance.streamError ?: "语音识别失败：豆包连接没有建立。"
             }
 
             // 硅基：当前引擎时就是主路径，豆包失败时是兜底。录音一直是 WAV，两边都能用。
-            val silicon = asr.silicon
+            val silicon = asr.configOf(VoiceVendor.SILICONFLOW)
             if (!silicon.configured) {
                 say(failure?.let { "$it 硅基兜底也没有配置，去设置里补上语音识别。" } ?: "还没有配置语音识别。")
                 return null

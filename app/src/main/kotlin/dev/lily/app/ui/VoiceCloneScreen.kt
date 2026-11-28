@@ -80,7 +80,7 @@ internal fun VoiceCloneScreen(
     val recorder = remember { SampleRecorder(context) }
     val mic = rememberMicPermission()
     // 声音复刻是硅基的能力，读写都用硅基那套配置，不受当前朗读引擎影响。
-    val tts = settings.tts.silicon
+    val tts = settings.tts.configOf(dev.lily.app.settings.VoiceVendor.SILICONFLOW)
     val currentVoice = Voices.effective(settings.persona.voice, settings.persona.gender)
 
     var step by remember { mutableStateOf(CloneStep.SAMPLE) }

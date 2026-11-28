@@ -5,7 +5,7 @@ import dev.lily.app.chat.EmojiStyle
 import dev.lily.app.life.LifeSettings
 import dev.lily.app.settings.AppSettings
 import dev.lily.app.settings.RelationSettings
-import dev.lily.app.settings.TtsProvider
+import dev.lily.app.settings.VoiceVendor
 import dev.lily.app.settings.VoiceSettings
 import dev.lily.app.voice.VoiceRouting
 import kotlinx.coroutines.flow.MutableStateFlow

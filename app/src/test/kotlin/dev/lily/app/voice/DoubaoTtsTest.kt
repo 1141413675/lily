@@ -1,9 +1,9 @@
 package dev.lily.app.voice
 
 import dev.lily.app.persona.Gender
-import dev.lily.app.settings.TtsProvider
 import dev.lily.app.settings.TtsSettings
 import dev.lily.app.settings.VoiceSettings
+import dev.lily.app.settings.VoiceVendor
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -25,7 +25,7 @@ class DoubaoTtsTest {
         apiKey = "api-key",
         voice = "zh_female_vv_uranus_bigtts",
         speed = 1.1f,
-        provider = TtsProvider.DOUBAO,
+        vendor = VoiceVendor.DOUBAO,
         resourceId = VoiceSettings.DOUBAO_RESOURCE_ID,
     )
 
@@ -165,12 +165,14 @@ class DoubaoTtsTest {
 
     @Test fun requestSwapsVoicesThatBelongToTheOtherProvider() {
         val tts = TtsSettings(
-            provider = TtsProvider.DOUBAO,
-            silicon = VoiceSettings(model = VoiceSettings.DEFAULT_TTS_MODEL),
-            doubao = VoiceSettings(
-                baseUrl = VoiceSettings.DOUBAO_BASE_URL,
-                apiKey = "api-key",
-                resourceId = VoiceSettings.DOUBAO_RESOURCE_ID,
+            vendor = VoiceVendor.DOUBAO,
+            byVendor = mapOf(
+                VoiceVendor.SILICONFLOW to VoiceSettings(model = VoiceSettings.DEFAULT_TTS_MODEL),
+                VoiceVendor.DOUBAO to VoiceSettings(
+                    baseUrl = VoiceSettings.DOUBAO_BASE_URL,
+                    apiKey = "api-key",
+                    resourceId = VoiceSettings.DOUBAO_RESOURCE_ID,
+                ),
             ),
         )
         assertEquals("zh_female_vv_uranus_bigtts", tts.request("FunAudioLLM/CosyVoice2-0.5B:claire", Gender.FEMALE).voice)
@@ -179,41 +181,45 @@ class DoubaoTtsTest {
         assertEquals("zh_female_vv_uranus_bigtts", tts.request("BV700_streaming", Gender.FEMALE).voice)
         assertEquals("zh_female_xiaohe_uranus_bigtts", tts.request("zh_female_xiaohe_uranus_bigtts", Gender.FEMALE).voice)
 
-        val back = tts.copy(provider = TtsProvider.SILICONFLOW)
+        val back = tts.copy(vendor = VoiceVendor.SILICONFLOW)
         assertEquals("FunAudioLLM/CosyVoice2-0.5B:claire", back.request("zh_female_vv_uranus_bigtts", Gender.FEMALE).voice)
     }
 
     @Test fun doubaoNeedsKeyAndResourceButNotAGlobalVoice() {
         val tts = TtsSettings(
-            provider = TtsProvider.DOUBAO,
-            doubao = VoiceSettings(
-                baseUrl = VoiceSettings.DOUBAO_BASE_URL,
-                apiKey = "api-key",
-                provider = TtsProvider.DOUBAO,
-                resourceId = VoiceSettings.DOUBAO_RESOURCE_ID,
+            vendor = VoiceVendor.DOUBAO,
+            byVendor = mapOf(
+                VoiceVendor.DOUBAO to VoiceSettings(
+                    baseUrl = VoiceSettings.DOUBAO_BASE_URL,
+                    apiKey = "api-key",
+                    vendor = VoiceVendor.DOUBAO,
+                    resourceId = VoiceSettings.DOUBAO_RESOURCE_ID,
+                ),
             ),
         )
         // 音色归角色，账号配置里没有 Speaker 也算完整。
         assertTrue(tts.configured)
-        assertFalse(tts.copy(doubao = tts.doubao.copy(resourceId = " ")).configured)
-        assertFalse(tts.copy(doubao = tts.doubao.copy(apiKey = "")).configured)
+        assertFalse(tts.copy(byVendor = tts.byVendor + (VoiceVendor.DOUBAO to tts.configOf(VoiceVendor.DOUBAO).copy(resourceId = " "))).configured)
+        assertFalse(tts.copy(byVendor = tts.byVendor + (VoiceVendor.DOUBAO to tts.configOf(VoiceVendor.DOUBAO).copy(apiKey = ""))).configured)
     }
 
     @Test fun fallbackIsSiliconOnlyWhenItIsConfigured() {
-        val base = TtsSettings(provider = TtsProvider.DOUBAO, doubao = doubao)
+        val base = TtsSettings(vendor = VoiceVendor.DOUBAO, byVendor = mapOf(VoiceVendor.DOUBAO to doubao))
         val app = dev.lily.app.settings.AppSettings(tts = base)
         assertNull(app.ttsFallback)
 
         val withSilicon = base.copy(
-            silicon = VoiceSettings(
-                baseUrl = "https://api.siliconflow.cn/v1",
-                model = VoiceSettings.DEFAULT_TTS_MODEL,
-                apiKey = "sk-test",
-            ),
+            byVendor = base.byVendor + (
+                VoiceVendor.SILICONFLOW to VoiceSettings(
+                    baseUrl = "https://api.siliconflow.cn/v1",
+                    model = VoiceSettings.DEFAULT_TTS_MODEL,
+                    apiKey = "sk-test",
+                )
+                ),
         )
         val configured = dev.lily.app.settings.AppSettings(tts = withSilicon).ttsFallback
         assertNotNull(configured)
-        assertEquals(TtsProvider.SILICONFLOW, configured!!.provider)
+        assertEquals(VoiceVendor.SILICONFLOW, configured!!.vendor)
         assertTrue(configured.configured)
     }
 

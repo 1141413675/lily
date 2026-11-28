@@ -4,6 +4,9 @@ import dev.lily.app.chat.EmojiStyle
 import dev.lily.app.life.LifeSettings
 import dev.lily.app.settings.AppSettings
 import dev.lily.app.settings.RelationSettings
+import dev.lily.app.settings.TtsSettings
+import dev.lily.app.settings.VoiceSettings
+import dev.lily.app.settings.VoiceVendor
 import java.io.File
 import org.junit.Rule
 import org.junit.Test
@@ -137,15 +140,19 @@ class AgentDirectoryTest {
             directory.create(PersonaSettings(nickname = "乙", gender = Gender.MALE, voice = secondVoice, voiceChosen = true)),
         )
 
-        val doubao = AppSettings(tts = dev.lily.app.settings.TtsSettings(
-            provider = dev.lily.app.settings.TtsProvider.DOUBAO,
-            doubao = dev.lily.app.settings.VoiceSettings(
-                baseUrl = dev.lily.app.settings.VoiceSettings.DOUBAO_BASE_URL,
-                voice = "zh_male_wennuanahu_uranus_bigtts",
-                provider = dev.lily.app.settings.TtsProvider.DOUBAO,
-                resourceId = dev.lily.app.settings.VoiceSettings.DOUBAO_RESOURCE_ID,
+        val doubao = AppSettings(
+            tts = TtsSettings(
+                vendor = VoiceVendor.DOUBAO,
+                byVendor = mapOf(
+                    VoiceVendor.DOUBAO to VoiceSettings(
+                        baseUrl = VoiceSettings.DOUBAO_BASE_URL,
+                        voice = "zh_male_wennuanahu_uranus_bigtts",
+                        vendor = VoiceVendor.DOUBAO,
+                        resourceId = VoiceSettings.DOUBAO_RESOURCE_ID,
+                    ),
+                ),
             ),
-        ))
+        )
         assertEquals(firstVoice, first.effectiveSettings(doubao).ttsRequest.voice)
         assertEquals(secondVoice, second.effectiveSettings(doubao).ttsRequest.voice)
 
@@ -154,9 +161,7 @@ class AgentDirectoryTest {
         assertEquals(Voices.doubaoDefault(Gender.MALE), blank.effectiveSettings(doubao).ttsRequest.voice)
 
         // 切到硅基：两个 Agent 的豆包音色都不通用，各自按性别回退，互不影响。
-        val silicon = AppSettings(tts = dev.lily.app.settings.TtsSettings(
-            provider = dev.lily.app.settings.TtsProvider.SILICONFLOW,
-        ))
+        val silicon = AppSettings(tts = TtsSettings(vendor = VoiceVendor.SILICONFLOW))
         assertEquals(Voices.defaultVoice(Gender.FEMALE), first.effectiveSettings(silicon).ttsRequest.voice)
         assertEquals(Voices.defaultVoice(Gender.MALE), second.effectiveSettings(silicon).ttsRequest.voice)
     }

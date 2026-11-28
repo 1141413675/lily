@@ -28,6 +28,13 @@ data class ArkModel(
     val perImage: Double? = null,
     /** 补充说明：分段计费、时段差异、模型特点。 */
     val note: String = "",
+    /**
+     * 能不能看图（多模态理解）。
+     *
+     * 操作模型必须能看图——它要看手机截图才知道该点哪里。
+     * 聊天模型用不上，但能看图的也能当聊天模型用。
+     */
+    val vision: Boolean = true,
 ) {
     /** 展示用的一行价格。 */
     val priceText: String
@@ -131,6 +138,7 @@ object ArkCatalog {
             inputPerMTok = 1.20,
             outputPerMTok = 3.60,
             note = "翻译专用",
+                    vision = false,
         ),
         ArkModel(
             id = "glm-5-3-flash-260828",
@@ -147,6 +155,7 @@ object ArkCatalog {
             inputPerMTok = 8.00,
             outputPerMTok = 28.00,
             note = "1024K 上下文",
+                    vision = false,
         ),
         ArkModel(
             id = "kimi-k3-1-pro-261024",
@@ -179,6 +188,7 @@ object ArkCatalog {
             inputPerMTok = 9.00,
             outputPerMTok = 27.00,
             note = "1024K 上下文",
+                    vision = false,
         ),
         ArkModel(
             id = "deepseek-v4-flash-ga-260731",
@@ -187,6 +197,7 @@ object ArkCatalog {
             inputPerMTok = 3.00,
             outputPerMTok = 9.00,
             note = "1024K 上下文",
+                    vision = false,
         ),
     )
 

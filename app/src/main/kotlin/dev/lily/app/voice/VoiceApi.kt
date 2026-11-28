@@ -2,10 +2,10 @@ package dev.lily.app.voice
 
 import android.util.Log
 import dev.lily.api.ApiErrors
-import dev.lily.app.settings.AsrProvider
 import dev.lily.app.settings.AsrSettings
-import dev.lily.app.settings.TtsProvider
+import dev.lily.app.settings.VoiceProtocol
 import dev.lily.app.settings.VoiceSettings
+import dev.lily.app.settings.VoiceVendor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -56,10 +56,11 @@ class VoiceApi {
      * 豆包失败（连接/鉴权/超时/空结果）自动回落到已配置的硅基；两边都失败会拼出可读原因。
      */
     suspend fun transcribe(asr: AsrSettings, audio: File): String = withContext(Dispatchers.IO) {
-        if (asr.provider == AsrProvider.SILICONFLOW) {
-            return@withContext transcribe(asr.silicon, audio)
+        if (asr.vendor != VoiceVendor.DOUBAO) {
+            // 其它家都是 OpenAI 兼容的 `/audio/transcriptions`。
+            return@withContext transcribe(asr.active, audio)
         }
-        val doubao = asr.doubao
+        val doubao = asr.active
         val failure = try {
             val text = DoubaoAsr.transcribeFile(doubao, audio)
             if (text.isNotBlank()) return@withContext text
@@ -108,8 +109,8 @@ class VoiceApi {
     }
 
     /**
-     * Text to speech；返回可直接播放的音频字节（两套供应商都是 mp3）。
-     * [instruction] 只用于 CosyVoice2 的自然语言情绪控制；豆包没有这个入口，正文里也绝不拼指令。
+     * Text to speech；返回可直接播放的音频字节。
+     * [instruction] 只用于 CosyVoice2 的自然语言情绪控制；其它家没有这个入口，正文里也绝不拼指令。
      */
     suspend fun speak(
         config: VoiceSettings,
@@ -122,22 +123,31 @@ class VoiceApi {
         if (spoken != text) {
             Log.w("Lily", "tts: stripped direction wording <${TtsScript.directionLeak(text)}> from body")
         }
-        if (config.provider == TtsProvider.DOUBAO) {
+        if (config.vendor == VoiceVendor.DOUBAO) {
             // 豆包出错（错误帧、超时、断线）时若硅基还配着，就降级到硅基，保证通话不会整段没声音。
             return@withContext try {
                 doubaoSpeak(config, spoken, instruction)
             } catch (e: Exception) {
-                val alt = fallback?.takeIf { it.configured && it.provider == TtsProvider.SILICONFLOW }
+                val alt = fallback?.takeIf { it.configured && it.vendor == VoiceVendor.SILICONFLOW }
                 if (alt == null) throw e
                 Log.w("Lily", "doubao tts failed, fallback to siliconflow: ${e.message}")
-                return@withContext siliconSpeak(alt, spoken, instruction)
+                return@withContext openAiSpeak(alt, spoken, instruction)
             }
         }
-        return@withContext siliconSpeak(config, spoken, instruction)
+        return@withContext when (config.vendor.protocol) {
+            VoiceProtocol.OPENAI_COMPATIBLE -> openAiSpeak(config, spoken, instruction)
+            VoiceProtocol.MINIMAX -> MiniMaxTts.speak(config, spoken)
+            VoiceProtocol.ELEVENLABS -> ElevenLabsTts.speak(config, spoken)
+            // 豆包走到这里说明配置串了，按 OpenAI 兼容处理并留痕。
+            VoiceProtocol.DOUBAO -> {
+                Log.w("Lily", "tts: doubao vendor reached openai path, vendor=${config.vendor}")
+                openAiSpeak(config, spoken, instruction)
+            }
+        }
     }
 
-    /** 硅基 CosyVoice2 的 OpenAI 兼容请求；豆包失败时也用它兜底。 */
-    private fun siliconSpeak(config: VoiceSettings, spoken: String, instruction: String?): ByteArray {
+    /** OpenAI 兼容的 `/audio/speech`；硅基、OpenAI、Groq 都走这一条。 */
+    private fun openAiSpeak(config: VoiceSettings, spoken: String, instruction: String?): ByteArray {
         val input = expressiveSpeechInput(config, spoken, instruction)
         val json = buildString {
             append("{\"model\":").append(config.model.quoted())

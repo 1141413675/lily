@@ -214,13 +214,15 @@ fun PersonaScreen(
         PersonaCard(stringResource(R.string.persona_voice)) {
             val clones by graph.clones.voices.collectAsStateWithLifecycle()
             // 实际音色只看这个角色自己的选择；不属于当前引擎就按性别取该引擎默认，不借全局值。
-            val provider = settings.tts.provider
+            val provider = settings.tts.vendor
             val picked = persona.voice.trim()
             val current = when (provider) {
-                dev.lily.app.settings.TtsProvider.DOUBAO ->
+                dev.lily.app.settings.VoiceVendor.DOUBAO ->
                     picked.takeIf { Voices.isDoubao(it) } ?: Voices.doubaoDefault(persona.gender)
-                dev.lily.app.settings.TtsProvider.SILICONFLOW ->
+                dev.lily.app.settings.VoiceVendor.SILICONFLOW ->
                     picked.takeIf { Voices.isSilicon(it) } ?: Voices.defaultVoice(persona.gender)
+                // 其它家音色 id 各不相同：人设里选的那个就用自己的，没选就用这一家的默认。
+                else -> picked.ifBlank { provider.defaultVoice }
             }
             val currentGender = Voices.of(current)?.gender
             if (currentGender != null && persona.gender != Gender.UNSPECIFIED && currentGender != persona.gender) {
@@ -231,7 +233,7 @@ fun PersonaScreen(
                 )
                 TextButton(
                     onClick = {
-                        val fallback = if (provider == dev.lily.app.settings.TtsProvider.DOUBAO) {
+                        val fallback = if (provider == dev.lily.app.settings.VoiceVendor.DOUBAO) {
                             Voices.doubaoDefault(persona.gender)
                         } else {
                             Voices.defaultVoice(persona.gender)
@@ -251,8 +253,8 @@ fun PersonaScreen(
                 )
             }
             // 当前音色：抬成一张大卡，一眼看到现在用的是哪一个。
-            val femaleVoices = if (provider == dev.lily.app.settings.TtsProvider.DOUBAO) Voices.DOUBAO_FEMALE else Voices.FEMALE
-            val maleVoices = if (provider == dev.lily.app.settings.TtsProvider.DOUBAO) Voices.DOUBAO_MALE else Voices.MALE
+            val femaleVoices = if (provider == dev.lily.app.settings.VoiceVendor.DOUBAO) Voices.DOUBAO_FEMALE else Voices.FEMALE
+            val maleVoices = if (provider == dev.lily.app.settings.VoiceVendor.DOUBAO) Voices.DOUBAO_MALE else Voices.MALE
             val cloneVoices = clones.map { PickerVoice(it.uri, it.name, null) }
             val currentName = Voices.of(current)?.label?.substringBeforeLast(" ")
                 ?: cloneVoices.firstOrNull { it.id == current }?.name
@@ -260,7 +262,7 @@ fun PersonaScreen(
             val currentSub = buildString {
                 append(Voices.of(current)?.gender?.label ?: "克隆音色")
                 append(" · ")
-                append(if (provider == dev.lily.app.settings.TtsProvider.DOUBAO) "豆包" else "硅基")
+                append(if (provider == dev.lily.app.settings.VoiceVendor.DOUBAO) "豆包" else "硅基")
             }
             VoicePicker(
                 female = femaleVoices,

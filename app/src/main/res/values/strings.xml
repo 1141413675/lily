@@ -155,8 +155,15 @@
     <string name="models_ark_use_voice">朗读、识别与通话</string>
     <string name="models_ark_use_voice_hint">走豆包语音，需要 IAM 的 Key；方舟的 Key 不行。</string>
     <string name="models_ark_model_chat">聊天模型</string>
+    <string name="models_ark_model_chat_hint">纯文字的大语言模型，负责跟你聊天。想让她更聪明就换贵的，想省钱就换便宜的。</string>
     <string name="models_ark_model_operator">操作模型</string>
+    <string name="models_ark_model_operator_hint">要看图的多模态模型：她帮你在手机上点按钮时，靠它读屏幕截图。必须选支持看图的模型，否则操作会一直失败。可以比聊天模型选便宜的。</string>
+    <string name="models_ark_text_only">只能处理文字，不能看图</string>
+    <string name="models_ark_needs_vision">这个模型不能看图，操作模型用它会看不清屏幕。换一个支持看图的。</string>
     <string name="models_ark_model_image">发图模型</string>
+    <string name="models_ark_model_image_hint">专门生图的模型：给它一段文字描述（或你的头像），它画出一张图。跟前面两个不是一类模型。</string>
+    <string name="models_ark_model_tts">朗读模型</string>
+    <string name="models_ark_model_asr">识别模型</string>
     <string name="models_ark_model_hint">从清单里挑，或者直接填模型 ID 自己填。价格按官方在售价，写在下面。</string>
     <string name="models_ark_price_unknown">这个模型不在清单里，价格待查。</string>
     <string name="models_ark_estimate">一轮对话大约 ¥%1$s</string>

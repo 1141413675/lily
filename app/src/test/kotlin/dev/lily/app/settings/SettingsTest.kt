@@ -51,8 +51,8 @@ class SettingsTest {
         val expected = sample.copy(
             realtime = sample.realtime,
             persona = sample.persona.copy(voice = voice),
-            // 两处旧音色不同，首次统一时给用户一条确认提示。
-            personaVoiceNotice = true,
+            // 新装没有「两处旧音色」这回事，不给迁移提示。
+            personaVoiceNotice = false,
         )
         assertEquals(expected, loaded)
         assertTrue(loaded.configured)
@@ -152,6 +152,20 @@ class SettingsTest {
         assertFalse(key in sample.chat.toModelConfig(dev.lily.api.ModelRole.CHAT).toString())
         assertFalse(key in SettingsForm.of(sample).toString())
         assertTrue("***" in sample.chat.toString())
+    }
+
+    @Test fun `a legacy global voice is carried over and flagged once`() {
+        // 老版本把音色存在「朗读」与「通话」两处，不一致时统一并提示一次。
+        val prefs = context.getSharedPreferences("plain-test", Context.MODE_PRIVATE)
+        prefs.edit()
+            .putString("tts.voice", "zh_female_xiaohe_uranus_bigtts")
+            .putString("realtime.voice", "zh_female_vv_uranus_bigtts")
+            .commit()
+
+        val loaded = store().current
+        assertEquals("zh_female_xiaohe_uranus_bigtts", loaded.persona.voice)
+        assertTrue(loaded.persona.voiceChosen)
+        assertTrue(loaded.personaVoiceNotice)
     }
 
     @Test fun `form parses and validates numbers`() {
@@ -268,28 +282,30 @@ class SettingsTest {
         val doubaoKey = "doubao-asr-key"
         val siliconKey = "sk-asr-silicon"
         val asr = AsrSettings(
-            provider = AsrProvider.DOUBAO,
-            silicon = VoiceSettings(
-                baseUrl = "https://api.siliconflow.cn/v1",
-                model = VoiceSettings.DEFAULT_ASR_MODEL,
-                apiKey = siliconKey,
-            ),
-            doubao = VoiceSettings(
-                baseUrl = VoiceSettings.DOUBAO_ASR_BASE_URL,
-                apiKey = doubaoKey,
-                provider = TtsProvider.DOUBAO,
-                resourceId = "volc.seedasr.sauc.concurrent",
+            vendor = VoiceVendor.DOUBAO,
+            byVendor = mapOf(
+                VoiceVendor.SILICONFLOW to VoiceSettings(
+                    baseUrl = "https://api.siliconflow.cn/v1",
+                    model = VoiceSettings.DEFAULT_ASR_MODEL,
+                    apiKey = siliconKey,
+                ),
+                VoiceVendor.DOUBAO to VoiceSettings(
+                    baseUrl = VoiceSettings.DOUBAO_ASR_BASE_URL,
+                    apiKey = doubaoKey,
+                    vendor = VoiceVendor.DOUBAO,
+                    resourceId = "volc.seedasr.sauc.concurrent",
+                ),
             ),
         )
         store.save(store.current.copy(asr = asr))
 
         val restored = store.current.asr
-        assertEquals(AsrProvider.DOUBAO, restored.provider)
-        assertEquals(doubaoKey, restored.doubao.apiKey)
+        assertEquals(VoiceVendor.DOUBAO, restored.vendor)
+        assertEquals(doubaoKey, restored.configOf(VoiceVendor.DOUBAO).apiKey)
         assertEquals("volc.seedasr.sauc.concurrent", restored.resourceId)
-        assertEquals(siliconKey, restored.silicon.apiKey)
+        assertEquals(siliconKey, restored.configOf(VoiceVendor.SILICONFLOW).apiKey)
         // 地址固定，不随存盘值变化。
-        assertEquals(VoiceSettings.DOUBAO_ASR_BASE_URL, restored.doubao.baseUrl)
+        assertEquals(VoiceSettings.DOUBAO_ASR_BASE_URL, restored.configOf(VoiceVendor.DOUBAO).baseUrl)
         assertTrue(restored.configured)
         val saved = store.current
         assertTrue(doubaoKey in saved.secrets)
@@ -303,9 +319,9 @@ class SettingsTest {
         assertTrue(siliconKey in secret)
 
         // 切回硅基只改 provider，豆包 Key 不会被清掉。
-        store.save(store.current.copy(asr = store.current.asr.copy(provider = AsrProvider.SILICONFLOW)))
-        assertEquals(AsrProvider.SILICONFLOW, store.current.asr.provider)
-        assertEquals(doubaoKey, store.current.asr.doubao.apiKey)
+        store.save(store.current.copy(asr = store.current.asr.copy(vendor = VoiceVendor.SILICONFLOW)))
+        assertEquals(VoiceVendor.SILICONFLOW, store.current.asr.vendor)
+        assertEquals(doubaoKey, store.current.asr.configOf(VoiceVendor.DOUBAO).apiKey)
     }
 
     @Test fun `primary role retains legacy birthdays and round trips new profile fields`() {

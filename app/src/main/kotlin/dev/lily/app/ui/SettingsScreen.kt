@@ -85,12 +85,11 @@ import dev.lily.api.ModelRole
 import dev.lily.app.AppGraph
 import dev.lily.app.R
 import dev.lily.app.appearance.ThemeMode
-import dev.lily.app.settings.AsrProvider
 import dev.lily.app.settings.ImageSettings
 import dev.lily.app.settings.ModelVendor
 import dev.lily.app.settings.ReplyMode
 import dev.lily.app.settings.SettingsForm
-import dev.lily.app.settings.TtsProvider
+import dev.lily.app.settings.VoiceVendor
 import dev.lily.llm.ModelCatalog
 import kotlinx.coroutines.launch
 import android.content.Context
@@ -699,66 +698,47 @@ internal fun VoiceSection(voice: SettingsForm.VoiceForm, onChange: (SettingsForm
     )
 }
 
-/** 语音识别引擎：硅基 / 豆包流式两套配置分开存，切换只改 provider，另一套原样保留。 */
+/**
+ * 语音识别：挑一家，编辑这一家的配置。
+ *
+ * 各家配置都留着，切回来不用重填。
+ */
 @Composable
 internal fun AsrSection(form: SettingsForm.AsrForm, onChange: (SettingsForm.AsrForm) -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-        FilterChip(
-            selected = form.provider == AsrProvider.SILICONFLOW,
-            onClick = { onChange(form.copy(provider = AsrProvider.SILICONFLOW)) },
-            label = { Text(stringResource(R.string.models_asr_siliconflow)) },
-        )
-        FilterChip(
-            selected = form.provider == AsrProvider.DOUBAO,
-            onClick = { onChange(form.copy(provider = AsrProvider.DOUBAO)) },
-            label = { Text(stringResource(R.string.models_asr_doubao)) },
-        )
-    }
-    if (form.provider == AsrProvider.DOUBAO) {
-        DoubaoAsrSection(form.doubao) { onChange(form.copy(doubao = it)) }
-        SettingsNote(stringResource(R.string.models_asr_doubao_hint))
-    } else {
-        VoiceSection(form.silicon) { onChange(form.copy(silicon = it)) }
-        SettingsNote(stringResource(R.string.models_key_siliconflow))
-    }
+    VoiceVendorChips(
+        vendors = VoiceVendor.entries.filter { it.supportsAsr },
+        current = form.vendor,
+        onPick = { onChange(form.copy(vendor = it)) },
+    )
+    val current = form.active
+    VoiceSection(current) { onChange(form.withVendor(form.vendor, it)) }
+    SettingsNote(form.vendor.keyHint)
     val missing = form.toSettings().missing
     if (missing.isNotEmpty()) {
         SettingsNote(stringResource(R.string.models_asr_incomplete, missing.joinToString("、")))
     }
 }
 
-/** 豆包流式语音识别 2.0：地址固定，只填 API Key 与 Resource ID。 */
+/** 语音厂商的选择按钮。 */
 @Composable
-internal fun DoubaoAsrSection(form: SettingsForm.DoubaoAsrForm, onChange: (SettingsForm.DoubaoAsrForm) -> Unit) {
-    var showKey by remember { mutableStateOf(false) }
-    OutlinedTextField(
-        value = form.token,
-        onValueChange = { onChange(form.copy(token = it)) },
-        label = { Text(stringResource(R.string.models_tts_access_token)) },
-        singleLine = true,
-        visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
-        trailingIcon = {
-            IconButton(onClick = { showKey = !showKey }) {
-                Icon(
-                    if (showKey) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                    contentDescription = stringResource(if (showKey) R.string.settings_hide_key else R.string.settings_show_key),
-                )
-            }
-        },
-        supportingText = { Text(stringResource(R.string.models_asr_doubao_fixed_url)) },
+internal fun VoiceVendorChips(
+    vendors: List<VoiceVendor>,
+    current: VoiceVendor,
+    onPick: (VoiceVendor) -> Unit,
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(Space.sm),
         modifier = Modifier.fillMaxWidth(),
-    )
-    OutlinedTextField(
-        value = form.resourceId,
-        onValueChange = { onChange(form.copy(resourceId = it)) },
-        label = { Text(stringResource(R.string.models_tts_resource_id)) },
-        supportingText = { Text(stringResource(R.string.models_asr_resource_id_hint)) },
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
-    )
+    ) {
+        vendors.forEach { vendor ->
+            FilterChip(
+                selected = vendor == current,
+                onClick = { onPick(vendor) },
+                label = { Text(vendor.displayName) },
+            )
+        }
+    }
 }
-
 /** 模型页字段：标签单独一行放在输入框上方并留出间距，和输入框边框脱开。 */
 @Composable
 internal fun FieldLabel(label: String, content: @Composable () -> Unit) {
@@ -923,73 +903,23 @@ internal fun ModelSection(
     SettingsNote(stringResource(R.string.models_key_hint, model.vendor.keyHintText))
 }
 
-/** 朗读引擎：硅基 / 豆包 2.0 两套配置分开存，切换只改 provider，另一套原样保留。 */
-@Composable
-internal fun TtsSection(form: SettingsForm.TtsForm, onChange: (SettingsForm.TtsForm) -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-        FilterChip(
-            selected = form.provider == TtsProvider.SILICONFLOW,
-            onClick = { onChange(form.copy(provider = TtsProvider.SILICONFLOW)) },
-            label = { Text(stringResource(R.string.models_tts_siliconflow)) },
-        )
-        FilterChip(
-            selected = form.provider == TtsProvider.DOUBAO,
-            onClick = { onChange(form.copy(provider = TtsProvider.DOUBAO)) },
-            label = { Text(stringResource(R.string.models_tts_doubao)) },
-        )
-    }
-    if (form.provider == TtsProvider.DOUBAO) {
-        DoubaoTtsSection(form.doubao) { onChange(form.copy(doubao = it)) }
-        SettingsNote(stringResource(R.string.models_tts_doubao_hint))
-    } else {
-        VoiceSection(form.silicon) { onChange(form.copy(silicon = it)) }
-        SettingsNote(stringResource(R.string.models_voice_hint))
-    }
-}
-
 /**
- * 豆包语音合成 2.0 的账号级配置：地址 + API Key + Resource ID。
- * 音色不在这里，去每个 Agent 的人设页单独选。
+ * 朗读：挑一家，编辑这一家的配置。
+ *
+ * 各家配置都留着，切回来不用重填。
  */
 @Composable
-internal fun DoubaoTtsSection(form: SettingsForm.DoubaoForm, onChange: (SettingsForm.DoubaoForm) -> Unit) {
-    var showToken by remember { mutableStateOf(false) }
-    val context = LocalContext.current
-    OutlinedTextField(
-        value = form.baseUrl,
-        onValueChange = { onChange(form.copy(baseUrl = it)) },
-        label = { Text(stringResource(R.string.settings_base_url)) },
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-        singleLine = true,
-        trailingIcon = { CopyUrlButton(form.baseUrl, context) },
-        modifier = Modifier.fillMaxWidth(),
+internal fun TtsSection(form: SettingsForm.TtsForm, onChange: (SettingsForm.TtsForm) -> Unit) {
+    VoiceVendorChips(
+        vendors = VoiceVendor.entries.filter { it.supportsTts },
+        current = form.vendor,
+        onPick = { onChange(form.copy(vendor = it)) },
     )
-    OutlinedTextField(
-        value = form.token,
-        onValueChange = { onChange(form.copy(token = it)) },
-        label = { Text(stringResource(R.string.models_tts_access_token)) },
-        singleLine = true,
-        visualTransformation = if (showToken) VisualTransformation.None else PasswordVisualTransformation(),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
-        trailingIcon = {
-            IconButton(onClick = { showToken = !showToken }) {
-                Icon(
-                    if (showToken) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                    contentDescription = stringResource(if (showToken) R.string.settings_hide_key else R.string.settings_show_key),
-                )
-            }
-        },
-        modifier = Modifier.fillMaxWidth(),
-    )
-    OutlinedTextField(
-        value = form.resourceId,
-        onValueChange = { onChange(form.copy(resourceId = it)) },
-        label = { Text(stringResource(R.string.models_tts_resource_id)) },
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
-    )
+    val current = form.active
+    VoiceSection(current) { onChange(form.withVendor(form.vendor, it)) }
+    SettingsNote(form.vendor.keyHint)
+    SettingsNote(stringResource(R.string.models_voice_hint))
 }
-
 /** 单行 URL 显示不下时，提供一个复制完整地址的入口。 */
 @Composable
 private fun CopyUrlButton(url: String, context: android.content.Context) {

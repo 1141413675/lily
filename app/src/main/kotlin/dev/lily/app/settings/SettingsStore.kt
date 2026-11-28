@@ -38,8 +38,9 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
             putModel(OPERATOR, stored.operator)
             putVendors("chat", stored.chatVendors)
             putVendors("operator", stored.operatorVendors)
-            putAsr(stored.asr)
-            putTts(stored.tts)
+            putVoiceConfigs("asr", stored.asr.byVendor)
+            putVoiceConfigs("tts", stored.tts.byVendor)
+            putString(REALTIME + BASE_URL, stored.realtime.baseUrl)
             putVoice(REALTIME, stored.realtime)
             putBoolean(REALTIME_ENABLED, stored.realtimeEnabled)
             putString(REPLY_MODE, stored.replyMode.name)
@@ -72,10 +73,8 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
             putString(OPERATOR + API_KEY, stored.operator.apiKey)
             putVendorKeys("chat", stored.chatVendors)
             putVendorKeys("operator", stored.operatorVendors)
-            putString(ASR + API_KEY, stored.asr.silicon.apiKey)
-            putString(ASR_DOUBAO + API_KEY, stored.asr.doubao.apiKey)
-            putString(TTS + API_KEY, stored.tts.silicon.apiKey)
-            putString(TTS_DOUBAO + API_KEY, stored.tts.doubao.apiKey)
+            putVoiceKeys("asr", stored.asr.byVendor)
+            putVoiceKeys("tts", stored.tts.byVendor)
             putString(REALTIME + API_KEY, stored.realtime.apiKey)
             putBoolean(MEMORY_EMBEDDING_ENABLED, stored.memoryEmbedding.enabled)
             putString(MEMORY_EMBEDDING + BASE_URL, stored.memoryEmbedding.baseUrl)
@@ -137,28 +136,36 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
             chatVendors = vendorProfiles("chat") + (chat.vendor to chat),
             operatorVendors = vendorProfiles("operator") + (operator.vendor to operator),
             asr = AsrSettings(
-                provider = plain.getString(ASR_PROVIDER, null)
-                    ?.let { name -> AsrProvider.entries.firstOrNull { it.name == name } }
-                    ?: defaults.asr.provider,
-                // 旧安装的 asr.* 就是硅基配置，升级后原样读回。
-                silicon = voice(ASR, defaults.asr.silicon),
-                doubao = voice(ASR_DOUBAO, defaults.asr.doubao).copy(
-                    // 地址固定，不接受旧值或手填地址。
-                    baseUrl = VoiceSettings.DOUBAO_ASR_BASE_URL,
-                    provider = TtsProvider.DOUBAO,
-                    resourceId = plain.getString(ASR_DOUBAO_RESOURCE_ID, null)
-                        ?: defaults.asr.doubao.resourceId,
-                ),
+                vendor = VoiceVendor.from(plain.getString(ASR_PROVIDER, null)),
+                // 旧安装的 asr.* 就是硅基配置、asr.doubao.* 是豆包，升级后原样读回。
+                byVendor = VoiceVendor.entries.mapNotNull { v ->
+                    val config = when (v) {
+                        // 旧安装的 asr.* 就是硅基配置，升级后原样读回。
+                        VoiceVendor.SILICONFLOW -> voiceConfig("asr", v, ASR)
+                        VoiceVendor.DOUBAO -> voiceConfig("asr", v, ASR_DOUBAO)?.copy(
+                            // 地址固定，不接受旧值或手填地址。
+                            baseUrl = VoiceSettings.DOUBAO_ASR_BASE_URL,
+                            resourceId = plain.getString(ASR_DOUBAO_RESOURCE_ID, null)
+                                ?: VoiceSettings.DOUBAO_ASR_RESOURCE_ID,
+                        )
+                        else -> voiceConfig("asr", v, null)
+                    }
+                    config?.let { v to it }
+                }.toMap(),
             ),
             tts = TtsSettings(
-                provider = plain.getString(TTS_PROVIDER, null)
-                    ?.let { name -> TtsProvider.entries.firstOrNull { it.name == name } }
-                    ?: defaults.tts.provider,
-                silicon = voice(TTS, defaults.tts.silicon),
-                doubao = voice(TTS_DOUBAO, defaults.tts.doubao).copy(
-                    provider = TtsProvider.DOUBAO,
-                    resourceId = plain.getString(TTS_DOUBAO_RESOURCE_ID, null) ?: defaults.tts.doubao.resourceId,
-                ),
+                vendor = VoiceVendor.from(plain.getString(TTS_PROVIDER, null)),
+                byVendor = VoiceVendor.entries.mapNotNull { v ->
+                    val config = when (v) {
+                        VoiceVendor.SILICONFLOW -> voiceConfig("tts", v, TTS)
+                        VoiceVendor.DOUBAO -> voiceConfig("tts", v, TTS_DOUBAO)?.copy(
+                            resourceId = plain.getString(TTS_DOUBAO_RESOURCE_ID, null)
+                                ?: VoiceSettings.DOUBAO_RESOURCE_ID,
+                        )
+                        else -> voiceConfig("tts", v, null)
+                    }
+                    config?.let { v to it }
+                }.toMap(),
             ),
             realtime = rawRealtime.copy(voice = safeRealtime),
             realtimeEnabled = plain.getBoolean(REALTIME_ENABLED, defaults.realtimeEnabled),
@@ -360,20 +367,67 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
         putFloat(prefix + SPEED, v.speed)
     }
 
-    /** 语音识别两套分开存；硅基继续用旧的 `asr.*` 键，旧安装升级后配置不丢。 */
-    private fun SharedPreferences.Editor.putAsr(a: AsrSettings) {
-        putString(ASR_PROVIDER, a.provider.name)
-        putVoice(ASR, a.silicon)
-        putVoice(ASR_DOUBAO, a.doubao)
-        putString(ASR_DOUBAO_RESOURCE_ID, a.doubao.resourceId)
+    /**
+     * 每家一份语音配置：`voice.<能力>.<厂商>.`。
+     *
+     * 旧的 `tts.silicon.*` / `tts.doubao.*` 键在读取时迁移过来，老安装不丢配置。
+     */
+    private fun SharedPreferences.Editor.putVoiceConfigs(
+        capability: String,
+        configs: Map<VoiceVendor, VoiceSettings>,
+    ) {
+        configs.forEach { (vendor, v) ->
+            val prefix = voicePrefix(capability, vendor)
+            putString(prefix + BASE_URL, v.baseUrl)
+            putString(prefix + MODEL, v.model)
+            putString(prefix + VOICE, v.voice)
+            putString(prefix + RESOURCE_ID, v.resourceId)
+            putString(prefix + GROUP_ID, v.groupId)
+            putFloat(prefix + SPEED, v.speed)
+        }
     }
 
-    /** 两套朗读配置分开存；硅基继续用旧的 `tts.*` 键，旧安装升级后配置不丢。 */
-    private fun SharedPreferences.Editor.putTts(t: TtsSettings) {
-        putString(TTS_PROVIDER, t.provider.name)
-        putVoice(TTS, t.silicon)
-        putVoice(TTS_DOUBAO, t.doubao)
-        putString(TTS_DOUBAO_RESOURCE_ID, t.doubao.resourceId.trim())
+    /** 各家的 Key 走加密区。 */
+    private fun SharedPreferences.Editor.putVoiceKeys(
+        capability: String,
+        configs: Map<VoiceVendor, VoiceSettings>,
+    ) {
+        configs.forEach { (vendor, v) ->
+            putString(voicePrefix(capability, vendor) + API_KEY, v.apiKey)
+        }
+    }
+
+    private fun voicePrefix(capability: String, vendor: VoiceVendor) =
+        "voice.$capability.${vendor.name}."
+
+    /**
+     * 读某家的语音配置。
+     *
+     * 没存过就返回 null——设置里只留用户真的配过的那些家，其余用厂商预设即可，
+     * 这样存盘往返才不会多出一堆没配过的空配置。
+     */
+    private fun voiceConfig(capability: String, vendor: VoiceVendor, legacy: String?): VoiceSettings? {
+        val prefix = voicePrefix(capability, vendor)
+        val stored = plain.getString(prefix + BASE_URL, null) != null ||
+            plain.getString(prefix + MODEL, null) != null ||
+            secret.getString(prefix + API_KEY, null) != null ||
+            (legacy != null && plain.getString(legacy + BASE_URL, null) != null)
+        if (!stored) return null
+        val baseUrl = plain.getString(prefix + BASE_URL, null)
+            ?: legacy?.let { plain.getString(it + BASE_URL, null) }
+            ?: vendor.ttsBaseUrl
+        return VoiceSettings(
+            baseUrl = baseUrl,
+            model = plain.getString(prefix + MODEL, null)
+                ?: legacy?.let { plain.getString(it + MODEL, null) }
+                ?: "",
+            apiKey = secret.getString(prefix + API_KEY, null).orEmpty(),
+            voice = plain.getString(prefix + VOICE, null).orEmpty(),
+            speed = plain.getFloat(prefix + SPEED, 1.1f),
+            vendor = vendor,
+            resourceId = plain.getString(prefix + RESOURCE_ID, null).orEmpty(),
+            groupId = plain.getString(prefix + GROUP_ID, null).orEmpty(),
+        )
     }
 
     private fun model(prefix: String): ModelSettings {
@@ -491,6 +545,8 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
         private const val VENDOR = "vendor"
         private const val PROTOCOL = "protocol"
         private const val VOICE = "voice"
+        private const val RESOURCE_ID = "resourceId"
+        private const val GROUP_ID = "groupId"
         private const val SPEED = "speed"
         private const val IMAGE_MODEL = "image.model"
         private const val REPLY_MODE = "reply.mode"
