@@ -4,16 +4,17 @@
     <application
         android:networkSecurityConfig="@xml/network_security_config_debug"
         tools:replace="android:networkSecurityConfig">
-        <!-- Developer bridge for the xiaoman CLI (adb shell am broadcast). Debug builds only. -->
+        <!-- Developer bridge for the lily CLI (adb shell am broadcast). Debug builds only. -->
         <receiver
             android:name=".debug.DebugReceiver"
             android:exported="true"
             tools:ignore="ExportedReceiver">
             <intent-filter>
-                <action android:name="dev.xiaoman.debug.RUN" />
-                <action android:name="dev.xiaoman.debug.STOP" />
-                <action android:name="dev.xiaoman.debug.RELOAD_SKILLS" />
-                <action android:name="dev.xiaoman.debug.SAY" />
+                <action android:name="dev.lily.debug.RUN" />
+                <action android:name="dev.lily.debug.STOP" />
+                <action android:name="dev.lily.debug.RELOAD_SKILLS" />
+                <action android:name="dev.lily.debug.SAY" />
+                <action android:name="dev.lily.debug.CALL_NOTIFICATION" />
             </intent-filter>
         </receiver>
     </application>

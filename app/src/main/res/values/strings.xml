@@ -133,6 +133,14 @@
     <string name="models_vendor_key_hint">先选厂商，再只填它的 API Key；地址与常用模型已经填好。</string>
     <string name="models_key_hint">需要填的是：%1$s。其他厂商已经填过的 Key 不会被清掉。</string>
     <string name="models_pick_vendor">选择厂商</string>
+    <string name="models_vendor_sheet_title">选择服务方</string>
+    <string name="models_vendor_search_hint">搜索名字或地址</string>
+    <string name="models_vendor_group_self">自家模型厂商 · Key 只对这一家有效</string>
+    <string name="models_vendor_group_aggregator">聚合平台 · 一个 Key 打通多家模型</string>
+    <string name="models_vendor_group_local">本机与自建 · 自己填地址</string>
+    <string name="models_vendor_none">没有匹配的服务方，换个词试试，或选「自定义」自己填地址。</string>
+    <string name="models_vendor_selected">已选择</string>
+    <string name="models_key_optional">本机服务不需要 Key，留空即可。</string>
     <string name="models_pick_model">选择模型</string>
     <string name="models_protocol_openai">OpenAI 兼容</string>
     <string name="models_protocol_anthropic">Anthropic 原生</string>

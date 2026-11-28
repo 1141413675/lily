@@ -60,7 +60,7 @@ GitHub Actions 的 CI 工作流也会生成 Lily 调试版 APK。
 
 ## 课堂实践
 
-[学生动手手册](docs/classroom.md) 是基于上游小满项目的 TRAE 训练营教材，包含手机任务、档案和技能练习。
+[学生动手手册](docs/classroom.md) 是基于上游Lily项目的 TRAE 训练营教材，包含手机任务、档案和技能练习。
 
 ## 技能与开发者 CLI
 
@@ -77,7 +77,7 @@ python3 cli/xiaoman.py traces show <run_id>
 ## 目录结构
 
 ```
-lily/
+xiaoman/
 ├── core-api/        # 接口与数据结构，其他模块只依赖它
 ├── core-llm/        # 兼容 OpenAI 的模型客户端
 ├── core-memory/     # 记忆：Basic Memory 格式的 Markdown 笔记 + 中文检索
@@ -102,9 +102,9 @@ lily/
 ## 记忆
 
 记忆是 Basic Memory 格式的 Markdown 文件，存放在
-`/sdcard/Android/data/dev.xiaoman.app/files/memory/`，可以直接拷进 Obsidian 查看和编辑。
+`/sdcard/Android/data/dev.lily.app/files/memory/`，可以直接拷进 Obsidian 查看和编辑。
 「忘记」会直接删除对应文件。
 
 ## 许可证
 
-Lily 基于小满（Xiaoman）项目，沿用 MIT 许可证并保留上游版权声明。详见 [LICENSE](LICENSE)。
+Lily 基于Lily（Lily）项目，沿用 MIT 许可证并保留上游版权声明。详见 [LICENSE](LICENSE)。

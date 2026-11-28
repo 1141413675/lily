@@ -3,11 +3,13 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Live Updates：通话中把通知提升成状态栏胶囊（灵动岛）。Android 16 起才有效，低版本自动忽略。 -->
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
     <!-- 通话页：按住说话时录音，上传给设置里配置的识别服务。 -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- 通话期间切 MODE_IN_COMMUNICATION 并保持外放，让播放走通信路径参与系统回声消除。 -->
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
-    <!-- xiaoman://alarm/set opens the clock's prefilled new-alarm page (AlarmClock.ACTION_SET_ALARM). -->
+    <!-- lily://alarm/set opens the clock's prefilled new-alarm page (AlarmClock.ACTION_SET_ALARM). -->
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
@@ -15,7 +17,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
     <application
-        android:name=".XiaomanApp"
+        android:name=".LilyApp"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
@@ -23,7 +25,7 @@
         android:label="@string/app_name"
         android:networkSecurityConfig="@xml/network_security_config"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Xiaoman">
+        android:theme="@style/Theme.Lily">
         <activity
             android:name=".MainActivity"
             android:exported="true"

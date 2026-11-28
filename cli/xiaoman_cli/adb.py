@@ -10,14 +10,14 @@ import os
 import shlex
 import subprocess
 
-APP_PACKAGE = "dev.xiaoman.app"
+APP_PACKAGE = "dev.lily.app"
 EXTERNAL_FILES = "/sdcard/Android/data/%s/files" % APP_PACKAGE
 REMOTE_SKILLS = EXTERNAL_FILES + "/skills"
 REMOTE_TRACES = EXTERNAL_FILES + "/traces"
 RECEIVER = APP_PACKAGE + "/.debug.DebugReceiver"
-ACTION_RUN = "dev.xiaoman.debug.RUN"
-ACTION_STOP = "dev.xiaoman.debug.STOP"
-ACTION_RELOAD = "dev.xiaoman.debug.RELOAD_SKILLS"
+ACTION_RUN = "dev.lily.debug.RUN"
+ACTION_STOP = "dev.lily.debug.STOP"
+ACTION_RELOAD = "dev.lily.debug.RELOAD_SKILLS"
 LOG_TAG = "Xiaoman"
 
 

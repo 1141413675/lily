@@ -67,10 +67,10 @@ LLM client, memory, skills, sentinel, agent), `hands` is the accessibility layer
 ## Memory
 
 Notes are Markdown files in the Basic Memory format under
-`/sdcard/Android/data/dev.xiaoman.app/files/memory/`, so you can read and edit them in Obsidian.
+`/sdcard/Android/data/dev.lily.app/files/memory/`, so you can read and edit them in Obsidian.
 Forgetting deletes the file.
 
 ## License
 
-Lily is based on Xiaoman and retains the upstream MIT license and copyright notice.
+Lily is based on Lily and retains the upstream MIT license and copyright notice.
 See [LICENSE](LICENSE).

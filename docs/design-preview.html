@@ -1,0 +1,2105 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Xiaoman 设计效果预览 · 中性打底</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-font-smoothing:antialiased; }
+  body {
+    background:#161618; color:#8b8b93;
+    font-family:"PingFang SC","Helvetica Neue",sans-serif;
+    padding:48px 40px 80px;
+  }
+  h2.page { color:#E8E8EE; font-size:15px; font-weight:600; margin:0 0 18px 2px; }
+  h2.page span.sub { color:#7d7d86; font-weight:400; font-size:12px; margin-left:10px; }
+  .grid { display:grid; grid-template-columns:390px 390px; gap:28px 44px; justify-content:center; }
+  .cell { display:flex; flex-direction:column; gap:12px; }
+  .cap { font-size:12px; color:#7d7d86; padding-left:2px; }
+  .phone {
+    width:390px; height:844px; border-radius:28px; overflow:hidden;
+    display:flex; flex-direction:column;
+    box-shadow:0 0 0 1px rgba(255,255,255,.08), 0 24px 60px rgba(0,0,0,.5);
+  }
+  .ic { width:18px; height:18px; flex:0 0 auto; display:block; fill:none; stroke:currentColor; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round; }
+
+  .light {
+    --bg:#FFFFFF; --surface:#FFFFFF; --surfaceLow:#FAFAFA; --surface2:#F0F0F0;
+    --ink:#121212; --ink2:#737373; --ink3:#A8A8A8; --line:#DBDBDB;
+    --accent:#6E4D8F; --accentInk:#FFFFFF; --accentSoft:#F3ECFA; --accentOnSoft:#5A3D78;
+    --bubbleUser:#F3ECFA; --bubbleAgent:#F5F5F5; --online:#8B6BA8; --danger:#C2413F;
+    --accentLine:rgba(110,77,143,.35);
+  }
+  .dark {
+    --bg:#000000; --surface:#000000; --surfaceLow:#121212; --surface2:#1F1F1F;
+    --ink:#F5F5F5; --ink2:#A8A8A8; --ink3:#737373; --line:#262626;
+    --accent:#C7A6E3; --accentInk:#1A0E24; --accentSoft:#241A30; --accentOnSoft:#E2C6F4;
+    --bubbleUser:#2A2135; --bubbleAgent:#1A1A1A; --online:#B08BD0; --danger:#E0736B;
+    --accentLine:rgba(199,166,227,.35);
+  }
+  .phone { background:var(--bg); color:var(--ink); }
+
+  /* 顶栏 */
+  .topbar { height:56px; display:flex; align-items:center; gap:4px; padding:0 20px 0 8px; flex:0 0 auto; }
+  .back { width:40px; height:40px; display:flex; align-items:center; justify-content:center; color:var(--ink); }
+  .ttl { font-size:22px; line-height:30px; font-weight:600; }
+  .topbar .right { margin-left:auto; display:flex; align-items:center; gap:14px; }
+
+  .gtitle { font-size:12.5px; line-height:18px; font-weight:500; color:var(--ink3); }
+  .note { font-size:13px; line-height:20px; color:var(--ink3); }
+  .label { font-size:12.5px; line-height:18px; font-weight:500; color:var(--ink3); }
+  .val { font-size:13px; line-height:20px; color:var(--ink2); }
+
+  /* 模型页 */
+  .model-body { flex:1; overflow:hidden; padding:2px 20px 0; display:flex; flex-direction:column; gap:24px; }
+  .block { display:flex; flex-direction:column; gap:10px; }
+  .block-head { display:flex; align-items:baseline; justify-content:space-between; }
+  .block-toggle { font-size:12.5px; color:var(--ink3); }
+  .card { background:var(--bg); border:1px solid var(--line); border-radius:12px; }
+  .summary { display:flex; align-items:center; gap:8px; height:52px; padding:0 14px; }
+  .summary .v { font-size:14px; color:var(--ink2); }
+  .summary .dots { color:var(--ink3); font-size:13px; }
+  .summary .chev { margin-left:auto; color:var(--ink2); display:flex; }
+  .open { padding:14px; display:flex; flex-direction:column; gap:14px; }
+  .field { display:flex; flex-direction:column; gap:6px; }
+  .box {
+    height:46px; border-radius:10px; background:var(--surfaceLow); border:1px solid var(--line);
+    display:flex; align-items:center; padding:0 14px; gap:8px; font-size:15px; color:var(--ink);
+  }
+  .box.ro { color:var(--ink2); font-size:13.5px; }
+  .box .tail { margin-left:auto; color:var(--ink2); display:flex; }
+  .box.focus { border-color:var(--accent); }
+  .seg { display:flex; background:transparent; border:1px solid var(--line); border-radius:10px; padding:3px; gap:3px; }
+  .seg div { flex:1; height:32px; display:flex; align-items:center; justify-content:center; font-size:13.5px; color:var(--ink2); border-radius:8px; }
+  .seg .on { background:var(--accentSoft); color:var(--accentOnSoft); font-weight:500; }
+  .hintrow { font-size:12.5px; line-height:18px; color:var(--ink3); }
+
+  .savebar { flex:0 0 auto; background:var(--surface); border-top:1px solid var(--line); padding:12px 20px 22px; display:flex; align-items:center; gap:14px; }
+  .savebar .dirty { font-size:12.5px; color:var(--ink3); }
+  .btn {
+    margin-left:auto; height:46px; padding:0 26px; border-radius:12px;
+    background:var(--accent); color:var(--accentInk);
+    display:flex; align-items:center; font-size:15px; font-weight:500;
+  }
+
+  /* 聊天 */
+  .chat-head { height:56px; flex:0 0 auto; display:flex; align-items:center; gap:10px; padding:0 16px; background:var(--surface); border-bottom:1px solid var(--line); }
+  .avatar { width:34px; height:34px; border-radius:50%; background:var(--surface2); flex:0 0 auto; position:relative; }
+  .avatar::after { content:""; position:absolute; right:-1px; bottom:-1px; width:7px; height:7px; border-radius:50%; background:var(--online); box-shadow:0 0 0 2px var(--surface); }
+  .chat-name { font-size:16px; line-height:24px; font-weight:600; }
+  .xiaoman { font-family:"Snell Roundhand","Songti SC",serif; font-style:italic; font-size:15px; color:var(--accent); }
+  .head-btn { margin-left:auto; display:flex; color:var(--ink); }
+
+  .thread { flex:1; overflow:hidden; padding:10px 16px 0; display:flex; flex-direction:column; gap:10px; }
+  .day { align-self:center; font-size:12.5px; color:var(--ink3); margin:8px 0 4px; }
+  .msg { max-width:78%; padding:9px 13px; font-size:15px; line-height:24px; }
+  .her { align-self:flex-start; background:var(--bubbleAgent); border-radius:18px; }
+  .me { align-self:flex-end; background:var(--bubbleUser); border-radius:18px; }
+  .sys { align-self:center; background:var(--surface2); border-radius:12px; padding:7px 12px; display:flex; align-items:center; gap:6px; font-size:12.5px; color:var(--ink2); }
+  .sys .ic { width:15px; height:15px; }
+
+  .composer { flex:0 0 auto; background:var(--surface); border-top:1px solid var(--line); padding:10px 14px 26px; display:flex; align-items:center; gap:10px; }
+  .mic { display:flex; color:var(--ink2); }
+  .input { flex:1; height:42px; border-radius:10px; background:var(--surfaceLow); border:1px solid var(--line); display:flex; align-items:center; padding:0 14px; font-size:13px; color:var(--ink3); }
+  .send { width:34px; height:34px; border-radius:10px; background:var(--accent); color:var(--accentInk); display:flex; align-items:center; justify-content:center; }
+  .send .ic { width:17px; height:17px; }
+
+  /* 我的 */
+  .me-body { flex:1; overflow:hidden; padding:0 20px 0; display:flex; flex-direction:column; }
+  .rel { background:var(--bg); border:1px solid var(--line); border-radius:12px; padding:16px; display:flex; flex-direction:column; gap:14px; }
+  .rel-top { display:flex; align-items:center; gap:12px; }
+  .rel .av { width:52px; height:52px; border-radius:50%; background:var(--surface2); flex:0 0 auto; }
+  .rel .nm { font-size:16px; line-height:24px; font-weight:600; }
+  .rel .st { font-size:12.5px; line-height:18px; color:var(--ink3); margin-top:1px; }
+  .rel .days { display:flex; align-items:baseline; gap:5px; }
+  .rel .days .pre, .rel .days .post { font-size:12.5px; color:var(--ink3); }
+  .rel .days .n { font-size:22px; line-height:28px; font-weight:600; color:var(--accent); }
+
+  .pending { display:flex; align-items:center; height:44px; margin-top:8px; border-bottom:1px solid var(--line); font-size:13px; color:var(--ink3); }
+  .pending .chev { margin-left:auto; color:var(--ink3); display:flex; }
+
+  .group { margin-top:26px; display:flex; flex-direction:column; gap:2px; }
+  .group .gtitle { padding-bottom:6px; }
+  .row { height:48px; display:flex; align-items:center; gap:12px; border-bottom:1px solid var(--line); }
+  .row .ric { display:flex; color:var(--ink); width:18px; justify-content:center; }
+  .row .rk { font-size:15px; color:var(--ink); }
+  .row .rv { margin-left:auto; font-size:13px; color:var(--ink3); }
+  .row .chev { color:var(--ink3); display:flex; }
+
+  .tabbar { flex:0 0 auto; height:74px; background:var(--surface); border-top:1px solid var(--line); display:flex; align-items:center; padding:0 8px 18px; }
+  .tab { flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; }
+  .tab .ti { color:var(--ink3); display:flex; }
+  .tab .tt { font-size:12px; color:var(--ink3); }
+  .tab.on .ti, .tab.on .tt { color:var(--accent); }
+
+  /* 对话列表 */
+  .conv-list { flex:1; overflow:hidden; }
+  .convrow { height:76px; display:flex; align-items:center; gap:14px; padding:0 20px; border-bottom:1px solid var(--line); }
+  .convav { width:52px; height:52px; border-radius:50%; background:var(--surface2); flex:0 0 auto; }
+  .convname { font-size:16px; line-height:24px; font-weight:600; }
+  .convmsg { font-size:13.5px; line-height:20px; color:var(--ink3); margin-top:2px; }
+  .convchev { margin-left:auto; color:var(--ink3); display:flex; }
+
+  /* 动态 */
+  .post-head { display:flex; align-items:center; gap:10px; padding:16px 20px 10px; }
+  .post-av { width:34px; height:34px; border-radius:50%; background:var(--surface2); flex:0 0 auto; }
+  .post-name { font-size:14px; line-height:20px; font-weight:600; }
+  .post-time { font-size:12px; line-height:16px; color:var(--ink3); margin-top:1px; }
+  .post-badge { margin-left:auto; font-size:11.5px; color:var(--ink3); border:1px solid var(--line); border-radius:6px; padding:3px 7px; }
+  .post-body { padding:0 20px 12px; font-size:15px; line-height:24px; }
+  .post-imgs { display:flex; gap:2px; padding:0 20px; }
+  .post-imgs div { flex:1; height:148px; background:var(--surface2); }
+  .post-acts { display:flex; align-items:center; gap:24px; padding:14px 20px 18px; color:var(--ink); }
+  .post-acts .ic { width:20px; height:20px; }
+  .post-sep { height:1px; background:var(--line); }
+
+  /* 聊天信息 */
+  .cs-profile { display:flex; flex-direction:column; align-items:center; padding:22px 20px 24px; border-bottom:1px solid var(--line); }
+  .cs-av { width:76px; height:76px; border-radius:50%; background:var(--surface2); }
+  .cs-name { font-size:17px; line-height:24px; font-weight:600; margin-top:12px; }
+  .cs-sub { font-size:13px; line-height:18px; color:var(--ink3); margin-top:2px; }
+  .cs-link { font-size:13.5px; line-height:18px; color:var(--accent); margin-top:8px; }
+  .cs-body { flex:1; overflow:hidden; padding:0 20px; }
+  .cs-group { margin-top:22px; }
+  .cs-group .gtitle { padding-bottom:4px; }
+  .cs-group .row:last-child { border-bottom:none; }
+  .sw { width:44px; height:26px; border-radius:13px; background:#E4E4E4; margin-left:auto; position:relative; flex:0 0 auto; }
+  .dark .sw { background:#3A3A3A; }
+  .sw::after { content:""; position:absolute; top:2px; left:2px; width:22px; height:22px; border-radius:50%; background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.18); }
+  .sw.on { background:var(--accent); }
+  .sw.on::after { left:20px; }
+  .thumb { width:40px; height:40px; border-radius:8px; background:var(--surface2); margin-left:auto; }
+  .dangerink { color:var(--danger) !important; }
+  .delbar { flex:0 0 auto; padding:0 20px 26px; }
+  .delbtn { height:46px; border-radius:12px; border:1px solid var(--line); display:flex; align-items:center; justify-content:center; font-size:15px; color:var(--danger); }
+
+  /* 最近删除 */
+  .trrow { display:flex; align-items:center; gap:12px; height:66px; border-bottom:1px solid var(--line); }
+  .trrow .tav { width:44px; height:44px; border-radius:50%; background:var(--surface2); flex:0 0 auto; }
+  .trrow .twrap { flex:1; min-width:0; }
+  .trrow .tname { font-size:15px; line-height:22px; font-weight:600; }
+  .trrow .tmeta { font-size:11.5px; line-height:16px; color:var(--ink3); margin-top:2px; }
+  .trrow .tact { font-size:13.5px; line-height:18px; color:var(--accent); padding:4px 5px; flex:0 0 auto; }
+  .trrow .tact.dg { color:var(--danger); }
+
+  /* 确认弹窗 */
+  .scrim { position:absolute; inset:0; background:rgba(0,0,0,.28); display:flex; align-items:center; justify-content:center; padding:26px; border-radius:inherit; }
+  .dlg { background:var(--surface); border-radius:16px; padding:20px 20px 14px; width:100%; max-width:304px; box-shadow:0 18px 40px rgba(0,0,0,.22); }
+  .dark .dlg { background:#161616; box-shadow:0 18px 40px rgba(0,0,0,.6); }
+  .dlg .dt { font-size:17px; line-height:24px; font-weight:600; }
+  .dlg .db { font-size:13.5px; line-height:21px; color:var(--ink2); margin-top:10px; }
+  .dlg .da { display:flex; justify-content:flex-end; gap:6px; margin-top:16px; }
+  .dlg .dact { font-size:14.5px; line-height:20px; padding:9px 10px; color:var(--ink2); }
+  .dlg .dact.dg { color:var(--danger); font-weight:500; }
+
+  /* 二级页通用 */
+  .sub { flex:1; overflow:hidden; padding:4px 20px 0; display:flex; flex-direction:column; gap:22px; }
+  .grp { display:flex; flex-direction:column; gap:10px; }
+  .choice { display:flex; align-items:center; gap:12px; padding:14px 16px; border-radius:10px; border:1px solid var(--line); background:var(--bg); }
+  .choice .ct { font-size:15px; line-height:22px; color:var(--ink); }
+  .choice .cd { font-size:12.5px; line-height:18px; color:var(--ink2); margin-top:2px; }
+  .choice .tick { margin-left:auto; color:var(--ink3); display:flex; visibility:hidden; }
+  .choice.on { background:var(--accentSoft); border-color:var(--accentLine); }
+  .choice.on .ct { color:var(--accentOnSoft); }
+  .choice.on .tick { color:var(--accent); visibility:visible; }
+  .chips { display:flex; gap:10px; }
+  .chips div { height:34px; padding:0 18px; border-radius:17px; border:1px solid var(--line); display:flex; align-items:center; font-size:13.5px; color:var(--ink2); }
+  .chips .on { background:var(--accentSoft); border-color:var(--accentLine); color:var(--accentOnSoft); }
+  .preview { height:248px; border-radius:12px; background:var(--surface2); padding:14px; display:flex; flex-direction:column; gap:8px; }
+  .pv { max-width:72%; padding:8px 12px; border-radius:16px; font-size:13px; line-height:20px; }
+  .pv.her { background:var(--bubbleAgent); }
+  .pv.me { align-self:flex-end; background:var(--bubbleUser); }
+  .bggrid { display:flex; gap:10px; }
+  .bggrid div { flex:1; height:86px; border-radius:10px; background:var(--surface2); }
+  .bggrid .on { outline:2px solid var(--accent); outline-offset:1px; }
+  .path { font-size:12px; line-height:18px; color:var(--ink3); word-break:break-all; }
+  .skl { background:var(--bg); border:1px solid var(--line); border-radius:12px; padding:16px; display:flex; flex-direction:column; gap:6px; }
+  .skl .n { font-size:15px; line-height:22px; font-weight:600; }
+  .skl .d { font-size:13px; line-height:20px; color:var(--ink2); }
+  .skl .chip { align-self:flex-start; font-size:11.5px; background:var(--accentSoft); color:var(--accentOnSoft); padding:2px 8px; border-radius:6px; margin-top:2px; }
+  .skl .src { font-size:11px; color:var(--ink3); margin-top:2px; }
+  .svc { border:1px solid var(--line); border-radius:12px; padding:14px; display:flex; align-items:flex-start; gap:12px; }
+  .svc .sn { font-size:15px; font-weight:600; }
+  .svc .sd { font-size:12.5px; line-height:18px; color:var(--ink2); margin-top:2px; }
+  .statcard { border:1px solid var(--line); border-radius:12px; padding:16px; display:flex; flex-direction:column; gap:10px; }
+  .statrow { display:flex; gap:10px; }
+  .stat { flex:1; }
+  .stat .num { font-size:20px; line-height:26px; font-weight:600; }
+  .stat .lb { font-size:11.5px; color:var(--ink3); margin-top:2px; }
+  .footbar { flex:0 0 auto; border-top:1px solid var(--line); background:var(--surface); padding:10px 20px 22px; display:flex; align-items:center; gap:12px; }
+  .btnline { height:44px; padding:0 22px; border-radius:12px; border:1px solid var(--line); display:flex; align-items:center; font-size:14px; color:var(--ink); }
+  .btnsolid { height:44px; padding:0 24px; border-radius:12px; background:var(--accent); color:var(--accentInk); display:flex; align-items:center; font-size:14px; font-weight:500; }
+
+  /* 角色编辑 */
+  .pcard { display:flex; align-items:center; gap:14px; padding:16px; border:1px solid var(--line); border-radius:12px; }
+  .bigav { width:64px; height:64px; border-radius:50%; background:var(--surface2); flex:0 0 auto; }
+  .ptag { font-size:12px; line-height:18px; color:var(--ink3); margin-top:3px; }
+  .voice { display:flex; align-items:center; gap:12px; padding:14px 16px; border:1px solid var(--line); border-radius:12px; }
+  .voice .vn { font-size:14.5px; font-weight:600; }
+  .voice .vd { font-size:12px; color:var(--ink3); margin-top:2px; }
+  .voice .play { margin-left:auto; width:32px; height:32px; border-radius:50%; border:1px solid var(--line); display:flex; align-items:center; justify-content:center; color:var(--ink2); }
+
+  /* 关系 */
+  .statline { display:flex; border:1px solid var(--line); border-radius:12px; padding:16px; gap:8px; }
+  .statline .s { flex:1; text-align:center; }
+  .statline .s .v { font-size:17px; line-height:24px; font-weight:600; }
+  .statline .s .k { font-size:11.5px; color:var(--ink3); margin-top:2px; }
+  .chiprow { display:flex; flex-wrap:wrap; gap:8px; }
+  .chiprow div { font-size:12.5px; padding:5px 10px; border-radius:8px; background:var(--surfaceLow); border:1px solid var(--line); color:var(--ink2); }
+
+  /* 时间轴 */
+  .tl { display:flex; flex-direction:column; }
+  .tlnode { display:flex; gap:12px; }
+  .tlrail { width:9px; flex:0 0 9px; display:flex; flex-direction:column; align-items:center; }
+  .tldot { width:7px; height:7px; border-radius:50%; background:var(--ink3); margin-top:7px; flex:0 0 auto; }
+  .tldot.on { background:var(--accent); }
+  .tlline { width:1px; flex:1; background:var(--line); margin-top:4px; }
+  .tlbody { flex:1; padding-bottom:16px; }
+  .tltime { font-size:11.5px; color:var(--ink3); margin-bottom:5px; }
+  .tlcard { border:1px solid var(--line); border-radius:10px; padding:12px; font-size:13.5px; line-height:21px; }
+  .tlcard .tlt { font-size:13.5px; font-weight:600; margin-bottom:2px; }
+
+  /* 梦境 */
+  .night { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; padding:0 20px 40px;
+           background:radial-gradient(120% 60% at 50% 0%, #EDE6F6 0%, #FAFAFA 62%); }
+  .night.darkbg { background:radial-gradient(120% 60% at 50% 0%, #241B33 0%, #000000 62%); }
+  .moon { width:46px; height:46px; border-radius:50%; background:#E7DBF4; box-shadow:0 0 28px rgba(160,120,200,.35); }
+  .ntitle { font-size:20px; line-height:28px; font-weight:600; text-align:center; }
+  .nsub { font-size:12.5px; line-height:18px; color:var(--ink3); text-align:center; margin-top:-8px; }
+  .ncard { width:100%; border:1px solid var(--line); border-radius:12px; padding:16px; font-size:13.5px; line-height:22px; background:var(--surface); }
+
+  /* 通话记录 */
+  .clog { display:flex; align-items:center; gap:12px; padding:13px 0; border-bottom:1px solid var(--line); }
+  .clog .cav { width:40px; height:40px; border-radius:50%; background:var(--surface2); flex:0 0 auto; }
+  .clog .cn { font-size:14.5px; font-weight:600; }
+  .clog .cd { font-size:12px; color:var(--ink3); margin-top:2px; }
+  .clog .ct { margin-left:auto; font-size:11.5px; color:var(--ink3); }
+
+  /* 通话全屏 */
+  .callwrap { flex:1; display:flex; flex-direction:column; background:#FAFAFB; }
+  .callwrap.dk { background:#221F26; color:#F0EDF3; }
+  .callhead { display:flex; align-items:center; gap:10px; padding:14px 20px; }
+  .callhead .cav { width:34px; height:34px; border-radius:50%; background:#E9E6EE; flex:0 0 auto; }
+  .callwrap.dk .callhead .cav { background:#3B3441; }
+  .callname { font-size:14px; line-height:20px; font-weight:600; }
+  .callsub { font-size:11.5px; line-height:16px; color:#8E8A94; margin-top:1px; }
+  .callacts { margin-left:auto; display:flex; gap:16px; color:#6E6A75; }
+  .callwrap.dk .callacts { color:#BDB7C4; }
+  .stage { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; }
+  .bigring { width:152px; height:152px; border-radius:50%; background:#F1EEF4; display:flex; align-items:center; justify-content:center; }
+  .callwrap.dk .bigring { background:#2B2530; box-shadow:0 0 0 1px rgba(255,255,255,.05); }
+  .bigring .in { width:104px; height:104px; border-radius:50%; background:#E4E0EA; }
+  .callwrap.dk .bigring .in { background:#3B3441; }
+  .stagename { font-size:22px; line-height:30px; font-weight:600; }
+  .stagesub { font-size:13px; line-height:18px; color:#8E8A94; }
+  .caption { margin:0 20px 14px; background:#FFFFFF; border:1px solid #E5E2E9; border-radius:12px; padding:12px 14px; font-size:13px; line-height:20px; color:#5C5763; }
+  .callwrap.dk .caption { background:#2B2530; border-color:#3B3441; color:#C9C3D1; }
+  .callbtns { display:flex; justify-content:center; gap:34px; padding:6px 20px 40px; }
+  .cbtnwrap { display:flex; flex-direction:column; align-items:center; gap:8px; }
+  .cbtn { width:66px; height:66px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:#F0EDF3; color:#4A4551; }
+  .callwrap.dk .cbtn { background:#3B3441; color:#E4DFEA; }
+  .cbtn.red { background:#A63C52; color:#FFFFFF; }
+  .cbtnwrap .t { font-size:11.5px; color:#8E8A94; }
+  .callwrap.dk .cbtnwrap .t { color:#A9A2B3; }
+
+  /* 弹窗 */
+  .dlgmask { flex:1; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; padding:0 26px; }
+  .dlg { width:100%; background:#FFFFFF; border-radius:16px; padding:22px 20px 16px; }
+  .dlg.dk { background:#17151A; color:#F5F5F5; }
+  .dlg .dt { font-size:17px; line-height:24px; font-weight:600; }
+  .dlg .dd { font-size:13px; line-height:20px; color:#8A858F; margin-top:6px; }
+  .dlgacts { display:flex; gap:10px; margin-top:18px; }
+  .dlgacts .a { flex:1; height:42px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:14px; background:#F0EDF3; color:#4A4551; }
+  .dlgacts .a.pri { background:#6E4D8F; color:#FFFFFF; }
+
+  /* 表情库 */
+  .stickgrid { display:grid; grid-template-columns:repeat(4, 1fr); gap:10px; }
+  .stickgrid .s { aspect-ratio:1; border-radius:10px; background:var(--surface2); }
+  .stickgrid .add { aspect-ratio:1; border-radius:10px; border:1px dashed var(--line); display:flex; align-items:center; justify-content:center; color:var(--ink3); }
+
+  /* 输入托盘 */
+  .tray { border-top:1px solid var(--line); background:var(--surface); padding:14px 16px 26px; display:flex; flex-direction:column; gap:12px; }
+  .traygrid { display:grid; grid-template-columns:repeat(6, 1fr); gap:8px; }
+  .traygrid .s { aspect-ratio:1; border-radius:8px; background:var(--surface2); }
+  .trayacts { display:flex; gap:12px; }
+  .trayacts .a { flex:1; height:44px; border-radius:10px; border:1px solid var(--line); display:flex; align-items:center; justify-content:center; gap:8px; font-size:13.5px; color:var(--ink2); }
+  .holdbar { height:46px; border-radius:10px; border:1px solid var(--line); display:flex; align-items:center; justify-content:center; font-size:13.5px; color:var(--ink3); background:var(--surfaceLow); }
+
+  /* 收藏 */
+  .savedrow { display:flex; gap:12px; padding:14px 0; border-bottom:1px solid var(--line); }
+  .savedrow .thumb2 { width:76px; height:76px; border-radius:10px; background:var(--surface2); flex:0 0 auto; }
+  .savedrow .nm { font-size:13px; color:var(--ink2); }
+  .savedrow .tx { font-size:14px; line-height:22px; margin-top:4px; }
+</style>
+</head>
+<body>
+
+<svg style="display:none">
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5 8 12l7 7"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M4 15V6a2 2 0 0 1 2-2h9"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><path d="M6 3.5c-.9 0-1.6.8-1.5 1.7.7 6.3 5.4 11 11.7 11.7.9.1 1.8-.6 1.8-1.5v-2.4c0-.8-.5-1.4-1.2-1.7l-2.4-.8c-.7-.2-1.4 0-1.8.6l-1 1.2c-1.9-1.1-3.4-2.6-4.5-4.5l1.2-1c.6-.4.8-1.1.6-1.8l-.8-2.4c-.2-.7-.9-1.2-1.7-1.2z"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V20"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 6.5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H9l-5 3.5v-3.5a2 2 0 0 1-2-2z"/><path d="M8 10h8M8 13.5h5"/></symbol>
+  <symbol id="i-person" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4.5 20c0-3.6 3.4-6 7.5-6s7.5 2.4 7.5 6"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="M4.5 17l4.5-4.5 3.5 3.5 2.5-2.5 3 3"/></symbol>
+  <symbol id="i-palette" viewBox="0 0 24 24"><path d="M12 21a9 9 0 1 1 9-9c0 2.2-1.8 3.2-3.5 3.2h-1.8a1.8 1.8 0 0 0-1.4 2.9c.3.4.2 1-.5 1.4-.7.4-1.5.5-2.3.5z"/><circle cx="8" cy="9" r="1.2"/><circle cx="12" cy="7" r="1.2"/><circle cx="16" cy="9.5" r="1.2"/></symbol>
+  <symbol id="i-frame" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M6 16l4-4 3 3"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M3 7h18M3 17h18"/><circle cx="9" cy="7" r="2.2"/><circle cx="15" cy="17" r="2.2"/></symbol>
+  <symbol id="i-puzzle" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M12 4v4M12 16v4M4 12h4M16 12h4"/></symbol>
+  <symbol id="i-hub" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.4"/><circle cx="12" cy="4" r="1.8"/><circle cx="4.5" cy="17" r="1.8"/><circle cx="19.5" cy="17" r="1.8"/><path d="M12 5.8v3.8M10 13.4l-4.2 2.6M14 13.4l4.2 2.6"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 2.6v6.2c0 4.4-3.1 7.4-7 8.2-3.9-.8-7-3.8-7-8.2V5.6z"/></symbol>
+  <symbol id="i-storage" viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="6.5" rx="2"/><rect x="3.5" y="13.5" width="17" height="6.5" rx="2"/><circle cx="7" cy="7.2" r=".9"/><circle cx="7" cy="16.8" r=".9"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5.5" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.7" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20.2s-7.2-4.4-7.2-9.2A4.1 4.1 0 0 1 12 8.1a4.1 4.1 0 0 1 7.2 2.9c0 4.8-7.2 9.2-7.2 9.2z"/></symbol>
+  <symbol id="i-comment" viewBox="0 0 24 24"><path d="M4 6.5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H9l-5 3.5v-3.5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-share" viewBox="0 0 24 24"><path d="M21 3.5 13.2 21l-2.4-7.4L3 11z"/></symbol>
+  <symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M7 4.5h10a1 1 0 0 1 1 1v14.5l-6-3.8-6 3.8V5.5a1 1 0 0 1 1-1z"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="9.5" rx="2"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.5 7h15M9 7V5h6v2M7.5 7l.9 13h7.2l.9-13M10.5 11v6M13.5 11v6"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="5.5"/><path d="M15.6 15.6 20 20"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6.5 9.5a5.5 5.5 0 0 1 11 0v3.5l2 3.5h-15l2-3.5z"/><path d="M10 19.5a2 2 0 0 0 4 0"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M9 3.5h6l-1 6 3 3.5H7l3-3.5z"/><path d="M12 13v7.5"/></symbol>
+  <symbol id="i-chevdown" viewBox="0 0 24 24"><path d="M5 9.5l7 7 7-7"/></symbol>
+  <symbol id="i-speaker" viewBox="0 0 24 24"><path d="M4 9.5h4l5-3.5v12l-5-3.5H4z"/><path d="M16 8.5a5 5 0 0 1 0 7"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5 10 17.5 19 6.5"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v4h-4"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9.5" cy="8" r="3.4"/><path d="M3.5 19.5c0-3.2 2.7-5.4 6-5.4s6 2.2 6 5.4"/><path d="M16.5 5.2a3.4 3.4 0 0 1 0 6.6M18 19.5c0-2.2-.7-3.9-2-5"/></symbol>
+</svg>
+
+<h2 class="page">01 · 模型与接口<span class="sub">中性底 + 紫点缀，紫只出现在保存、选中态、聚焦</span></h2>
+<div class="grid">
+
+  <div class="cell">
+    <div class="phone light">
+      <div class="topbar">
+        <div class="back"><svg class="ic"><use href="#i-back"/></svg></div>
+        <div class="ttl" style="font-size:20px;line-height:28px;">模型与接口</div>
+      </div>
+      <div class="model-body">
+        <div class="note">连接决定她怎么说话、怎么看见图。改完点保存。</div>
+
+        <div class="block">
+          <div class="block-head"><div class="gtitle">连接</div><div class="block-toggle">收起</div></div>
+          <div class="card open">
+            <div class="field">
+              <div class="label">厂商</div>
+              <div class="box"><span>豆包 2.0</span><span class="tail"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+            </div>
+            <div class="field">
+              <div class="label">接口地址</div>
+              <div class="box ro"><span>https://ark.cn-beijing.volces.com/api/v3</span><span class="tail"><svg class="ic"><use href="#i-copy"/></svg></span></div>
+            </div>
+            <div class="field">
+              <div class="label">模型</div>
+              <div class="box"><span>doubao-seed-1-6-250615</span><span class="tail"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+            </div>
+            <div class="field">
+              <div class="label">API Key</div>
+              <div class="box focus"><span>••••••••••••1234</span><span class="tail"><svg class="ic"><use href="#i-eye"/></svg></span></div>
+            </div>
+            <div class="field">
+              <div class="label">协议</div>
+              <div class="seg"><div class="on">OpenAI</div><div>Anthropic</div></div>
+            </div>
+            <div class="hintrow">操作模型沿用同一把 Key</div>
+          </div>
+        </div>
+
+        <div class="block">
+          <div class="block-head"><div class="gtitle">语音与记忆</div><div class="block-toggle">展开</div></div>
+          <div class="card summary">
+            <span class="v">识别 · 豆包流式</span><span class="dots">/</span><span class="v">合成 · 豆包 2.0</span>
+            <span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span>
+          </div>
+        </div>
+
+        <div class="note" style="margin-top:auto;padding-bottom:18px;">记忆向量化已开启，用豆包 embedding</div>
+      </div>
+      <div class="savebar"><span class="dirty">2 处改动</span><div class="btn">保存</div></div>
+    </div>
+    <div class="cap">模型与接口 · 亮色</div>
+  </div>
+
+  <div class="cell">
+    <div class="phone dark">
+      <div class="topbar">
+        <div class="back"><svg class="ic"><use href="#i-back"/></svg></div>
+        <div class="ttl" style="font-size:20px;line-height:28px;">模型与接口</div>
+      </div>
+      <div class="model-body">
+        <div class="note">连接决定她怎么说话、怎么看见图。改完点保存。</div>
+
+        <div class="block">
+          <div class="block-head"><div class="gtitle">连接</div><div class="block-toggle">收起</div></div>
+          <div class="card open">
+            <div class="field">
+              <div class="label">厂商</div>
+              <div class="box"><span>豆包 2.0</span><span class="tail"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+            </div>
+            <div class="field">
+              <div class="label">接口地址</div>
+              <div class="box ro"><span>https://ark.cn-beijing.volces.com/api/v3</span><span class="tail"><svg class="ic"><use href="#i-copy"/></svg></span></div>
+            </div>
+            <div class="field">
+              <div class="label">模型</div>
+              <div class="box"><span>doubao-seed-1-6-250615</span><span class="tail"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+            </div>
+            <div class="field">
+              <div class="label">API Key</div>
+              <div class="box focus"><span>••••••••••••1234</span><span class="tail"><svg class="ic"><use href="#i-eye"/></svg></span></div>
+            </div>
+            <div class="field">
+              <div class="label">协议</div>
+              <div class="seg"><div class="on">OpenAI</div><div>Anthropic</div></div>
+            </div>
+            <div class="hintrow">操作模型沿用同一把 Key</div>
+          </div>
+        </div>
+
+        <div class="block">
+          <div class="block-head"><div class="gtitle">语音与记忆</div><div class="block-toggle">展开</div></div>
+          <div class="card summary">
+            <span class="v">识别 · 豆包流式</span><span class="dots">/</span><span class="v">合成 · 豆包 2.0</span>
+            <span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span>
+          </div>
+        </div>
+
+        <div class="note" style="margin-top:auto;padding-bottom:18px;">记忆向量化已开启，用豆包 embedding</div>
+      </div>
+      <div class="savebar"><span class="dirty">2 处改动</span><div class="btn">保存</div></div>
+    </div>
+    <div class="cap">模型与接口 · 暗色</div>
+  </div>
+</div>
+
+<h2 class="page" style="margin-top:64px;">02 · 聊天<span class="sub">她的气泡灰、我的气泡浅紫，其余全中性</span></h2>
+<div class="grid">
+  <div class="cell">
+    <div class="phone light">
+      <div class="chat-head">
+        <div class="avatar"></div>
+        <div class="chat-name">小鱼</div>
+        <div class="xiaoman">xiaoman</div>
+        <div class="head-btn" style="gap:22px;align-items:center;"><svg class="ic"><use href="#i-phone"/></svg><svg class="ic"><use href="#i-more"/></svg></div>
+      </div>
+      <div class="thread">
+        <div class="day">今天</div>
+        <div class="msg her">你回来啦。今天路上冷不冷？</div>
+        <div class="msg me">有点，风比昨天大。</div>
+        <div class="msg her">那把手套翻出来吧。我记得你放在玄关第二层。</div>
+        <div class="sys"><svg class="ic"><use href="#i-phone"/></svg><span>通话 3 分 12 秒</span></div>
+        <div class="msg me">你记性比我好。</div>
+        <div class="msg her">关于你的事，我留得很仔细。</div>
+      </div>
+      <div class="composer">
+        <div class="mic"><svg class="ic"><use href="#i-mic"/></svg></div>
+        <div class="input">说点什么…</div>
+        <div class="send"><svg class="ic"><use href="#i-send"/></svg></div>
+      </div>
+    </div>
+    <div class="cap">聊天 · 亮色</div>
+  </div>
+
+  <div class="cell">
+    <div class="phone dark">
+      <div class="chat-head">
+        <div class="avatar"></div>
+        <div class="chat-name">小鱼</div>
+        <div class="xiaoman">xiaoman</div>
+        <div class="head-btn" style="gap:22px;align-items:center;"><svg class="ic"><use href="#i-phone"/></svg><svg class="ic"><use href="#i-more"/></svg></div>
+      </div>
+      <div class="thread">
+        <div class="day">今天</div>
+        <div class="msg her">你回来啦。今天路上冷不冷？</div>
+        <div class="msg me">有点，风比昨天大。</div>
+        <div class="msg her">那把手套翻出来吧。我记得你放在玄关第二层。</div>
+        <div class="sys"><svg class="ic"><use href="#i-phone"/></svg><span>通话 3 分 12 秒</span></div>
+        <div class="msg me">你记性比我好。</div>
+        <div class="msg her">关于你的事，我留得很仔细。</div>
+      </div>
+      <div class="composer">
+        <div class="mic"><svg class="ic"><use href="#i-mic"/></svg></div>
+        <div class="input">说点什么…</div>
+        <div class="send"><svg class="ic"><use href="#i-send"/></svg></div>
+      </div>
+    </div>
+    <div class="cap">聊天 · 暗色</div>
+  </div>
+</div>
+
+<h2 class="page" style="margin-top:64px;">03 · 我的<span class="sub">列表走细灰线，不再用整块浅紫卡片</span></h2>
+<div class="grid">
+  <div class="cell">
+    <div class="phone light">
+      <div class="topbar" style="height:66px;">
+        <div class="ttl" style="font-size:22px;line-height:30px;">我的</div>
+        <div class="right"><div class="xiaoman" style="font-size:16px;">xiaoman</div></div>
+      </div>
+      <div class="me-body">
+        <div class="rel">
+          <div class="rel-top">
+            <div class="av"></div>
+            <div>
+              <div class="nm">小鱼</div>
+              <div class="st">她现在 · 平静</div>
+            </div>
+          </div>
+          <div class="days"><span class="pre">在一起</span><span class="n">3</span><span class="post">天</span></div>
+        </div>
+
+        <div class="pending"><span>待完善 3 项</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+
+        <div class="group">
+          <div class="gtitle">聊天与外观</div>
+          <div class="row"><span class="ric"><svg class="ic"><use href="#i-chat"/></svg></span><span class="rk">对话</span><span class="rv">均衡</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="ric"><svg class="ic"><use href="#i-image"/></svg></span><span class="rk">角色发图</span><span class="rv">每天最多 3 张</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="ric"><svg class="ic"><use href="#i-palette"/></svg></span><span class="rk">主题</span><span class="rv">跟随系统</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="ric"><svg class="ic"><use href="#i-frame"/></svg></span><span class="rk">聊天背景</span><span class="rv">紫雾</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+        </div>
+
+        <div class="group">
+          <div class="gtitle">高级设置</div>
+          <div class="row"><span class="ric"><svg class="ic"><use href="#i-sliders"/></svg></span><span class="rk">模型与接口</span><span class="rv">已配置</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="ric"><svg class="ic"><use href="#i-puzzle"/></svg></span><span class="rk">技能</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="ric"><svg class="ic"><use href="#i-hub"/></svg></span><span class="rk">外部服务</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="ric"><svg class="ic"><use href="#i-shield"/></svg></span><span class="rk">安全</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="ric"><svg class="ic"><use href="#i-storage"/></svg></span><span class="rk">存储</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+        </div>
+      </div>
+      <div class="tabbar">
+        <div class="tab"><div class="ti"><svg class="ic" style="width:22px;height:22px"><use href="#i-grid"/></svg></div><div class="tt">动态</div></div>
+        <div class="tab"><div class="ti"><svg class="ic" style="width:22px;height:22px"><use href="#i-chat"/></svg></div><div class="tt">聊天</div></div>
+        <div class="tab on"><div class="ti"><svg class="ic" style="width:22px;height:22px"><use href="#i-person"/></svg></div><div class="tt">我的</div></div>
+      </div>
+    </div>
+    <div class="cap">我的 · 亮色</div>
+  </div>
+
+  <div class="cell">
+    <div class="phone dark">
+      <div class="topbar" style="height:66px;">
+        <div class="ttl" style="font-size:22px;line-height:30px;">我的</div>
+        <div class="right"><div class="xiaoman" style="font-size:16px;">xiaoman</div></div>
+      </div>
+      <div class="me-body">
+        <div class="rel">
+          <div class="rel-top">
+            <div class="av"></div>
+            <div>
+              <div class="nm">小鱼</div>
+              <div class="st">她现在 · 平静</div>
+            </div>
+          </div>
+          <div class="days"><span class="pre">在一起</span><span class="n">3</span><span class="post">天</span></div>
+        </div>
+
+        <div class="pending"><span>待完善 3 项</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+
+        <div class="group">
+          <div class="gtitle">聊天与外观</div>
+          <div class="row"><span class="ric"><svg class="ic"><use href="#i-chat"/></svg></span><span class="rk">对话</span><span class="rv">均衡</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="ric"><svg class="ic"><use href="#i-image"/></svg></span><span class="rk">角色发图</span><span class="rv">每天最多 3 张</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="ric"><svg class="ic"><use href="#i-palette"/></svg></span><span class="rk">主题</span><span class="rv">跟随系统</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="ric"><svg class="ic"><use href="#i-frame"/></svg></span><span class="rk">聊天背景</span><span class="rv">紫雾</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+        </div>
+
+        <div class="group">
+          <div class="gtitle">高级设置</div>
+          <div class="row"><span class="ric"><svg class="ic"><use href="#i-sliders"/></svg></span><span class="rk">模型与接口</span><span class="rv">已配置</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="ric"><svg class="ic"><use href="#i-puzzle"/></svg></span><span class="rk">技能</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="ric"><svg class="ic"><use href="#i-hub"/></svg></span><span class="rk">外部服务</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="ric"><svg class="ic"><use href="#i-shield"/></svg></span><span class="rk">安全</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="ric"><svg class="ic"><use href="#i-storage"/></svg></span><span class="rk">存储</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+        </div>
+      </div>
+      <div class="tabbar">
+        <div class="tab"><div class="ti"><svg class="ic" style="width:22px;height:22px"><use href="#i-grid"/></svg></div><div class="tt">动态</div></div>
+        <div class="tab"><div class="ti"><svg class="ic" style="width:22px;height:22px"><use href="#i-chat"/></svg></div><div class="tt">聊天</div></div>
+        <div class="tab on"><div class="ti"><svg class="ic" style="width:22px;height:22px"><use href="#i-person"/></svg></div><div class="tt">我的</div></div>
+      </div>
+    </div>
+    <div class="cap">我的 · 暗色</div>
+  </div>
+</div>
+
+<h2 class="page" style="margin-top:64px;">04 · 对话列表<span class="sub">一级页，行 76 高、52 头像，右侧细箭头</span></h2>
+<div class="grid">
+  <div class="cell">
+    <div class="phone light">
+      <div class="topbar" style="height:66px;">
+        <div class="ttl">对话</div>
+        <div class="right"><svg class="ic" style="width:22px;height:22px"><use href="#i-plus"/></svg></div>
+      </div>
+      <div class="conv-list">
+        <div class="convrow"><div class="convav"></div><div><div class="convname">小鱼</div><div class="convmsg">你回来啦。今天路上冷不冷？</div></div><div class="convchev"><svg class="ic"><use href="#i-chev"/></svg></div></div>
+        <div class="convrow"><div class="convav"></div><div><div class="convname">时雨</div><div class="convmsg">图片</div></div><div class="convchev"><svg class="ic"><use href="#i-chev"/></svg></div></div>
+        <div class="convrow"><div class="convav"></div><div><div class="convname">阿岚</div><div class="convmsg">上次说到的那本书，我找到了</div></div><div class="convchev"><svg class="ic"><use href="#i-chev"/></svg></div></div>
+        <div class="convrow" style="border-bottom:none;"><div class="convav"></div><div><div class="convname">青禾</div><div class="convmsg">（还没有消息）</div></div><div class="convchev"><svg class="ic"><use href="#i-chev"/></svg></div></div>
+      </div>
+      <div class="tabbar">
+        <div class="tab"><div class="ti"><svg class="ic" style="width:22px;height:22px"><use href="#i-grid"/></svg></div><div class="tt">动态</div></div>
+        <div class="tab on"><div class="ti"><svg class="ic" style="width:22px;height:22px"><use href="#i-chat"/></svg></div><div class="tt">聊天</div></div>
+        <div class="tab"><div class="ti"><svg class="ic" style="width:22px;height:22px"><use href="#i-person"/></svg></div><div class="tt">我的</div></div>
+      </div>
+    </div>
+    <div class="cap">对话列表 · 亮色</div>
+  </div>
+
+  <div class="cell">
+    <div class="phone dark">
+      <div class="topbar" style="height:66px;">
+        <div class="ttl">对话</div>
+        <div class="right"><svg class="ic" style="width:22px;height:22px"><use href="#i-plus"/></svg></div>
+      </div>
+      <div class="conv-list">
+        <div class="convrow"><div class="convav"></div><div><div class="convname">小鱼</div><div class="convmsg">你回来啦。今天路上冷不冷？</div></div><div class="convchev"><svg class="ic"><use href="#i-chev"/></svg></div></div>
+        <div class="convrow"><div class="convav"></div><div><div class="convname">时雨</div><div class="convmsg">图片</div></div><div class="convchev"><svg class="ic"><use href="#i-chev"/></svg></div></div>
+        <div class="convrow"><div class="convav"></div><div><div class="convname">阿岚</div><div class="convmsg">上次说到的那本书，我找到了</div></div><div class="convchev"><svg class="ic"><use href="#i-chev"/></svg></div></div>
+        <div class="convrow" style="border-bottom:none;"><div class="convav"></div><div><div class="convname">青禾</div><div class="convmsg">（还没有消息）</div></div><div class="convchev"><svg class="ic"><use href="#i-chev"/></svg></div></div>
+      </div>
+      <div class="tabbar">
+        <div class="tab"><div class="ti"><svg class="ic" style="width:22px;height:22px"><use href="#i-grid"/></svg></div><div class="tt">动态</div></div>
+        <div class="tab on"><div class="ti"><svg class="ic" style="width:22px;height:22px"><use href="#i-chat"/></svg></div><div class="tt">聊天</div></div>
+        <div class="tab"><div class="ti"><svg class="ic" style="width:22px;height:22px"><use href="#i-person"/></svg></div><div class="tt">我的</div></div>
+      </div>
+    </div>
+    <div class="cap">对话列表 · 暗色</div>
+  </div>
+</div>
+
+<h2 class="page" style="margin-top:64px;">05 · 动态<span class="sub">她的日常，图片不留圆角、操作行细线图标</span></h2>
+<div class="grid">
+  <div class="cell">
+    <div class="phone light">
+      <div class="topbar" style="height:60px;">
+        <div class="ttl">动态</div>
+        <div class="right"><span style="font-size:15px;color:var(--ink);">发布</span></div>
+      </div>
+      <div style="flex:1;overflow:hidden;">
+        <div class="post-head">
+          <div class="post-av"></div>
+          <div><div class="post-name">小鱼</div><div class="post-time">今天 20:14</div></div>
+          <div class="post-badge">仅小鱼可见</div>
+        </div>
+        <div class="post-body">收拾到抽屉最底下翻出那张旧票根，纸边已经软了。原来那天是下过雨的。</div>
+        <div class="post-imgs"><div></div><div></div><div></div></div>
+        <div class="post-acts">
+          <svg class="ic"><use href="#i-heart"/></svg>
+          <svg class="ic"><use href="#i-comment"/></svg>
+          <svg class="ic"><use href="#i-share"/></svg>
+          <svg class="ic" style="margin-left:auto"><use href="#i-bookmark"/></svg>
+        </div>
+        <div class="post-sep"></div>
+        <div class="post-head">
+          <div class="post-av"></div>
+          <div><div class="post-name">小鱼</div><div class="post-time">昨天 22:40</div></div>
+          <div class="post-badge">仅小鱼可见</div>
+        </div>
+        <div class="post-body">今天雨小了一点，楼下的桂花落了一地，踩上去是湿的香。</div>
+        <div class="post-imgs"><div></div><div></div></div>
+        <div class="post-acts">
+          <svg class="ic"><use href="#i-heart"/></svg>
+          <svg class="ic"><use href="#i-comment"/></svg>
+          <svg class="ic"><use href="#i-share"/></svg>
+          <svg class="ic" style="margin-left:auto"><use href="#i-bookmark"/></svg>
+        </div>
+        <div class="post-sep"></div>
+      </div>
+      <div class="tabbar">
+        <div class="tab on"><div class="ti"><svg class="ic" style="width:22px;height:22px"><use href="#i-grid"/></svg></div><div class="tt">动态</div></div>
+        <div class="tab"><div class="ti"><svg class="ic" style="width:22px;height:22px"><use href="#i-chat"/></svg></div><div class="tt">聊天</div></div>
+        <div class="tab"><div class="ti"><svg class="ic" style="width:22px;height:22px"><use href="#i-person"/></svg></div><div class="tt">我的</div></div>
+      </div>
+    </div>
+    <div class="cap">动态 · 亮色</div>
+  </div>
+
+  <div class="cell">
+    <div class="phone dark">
+      <div class="topbar" style="height:60px;">
+        <div class="ttl">动态</div>
+        <div class="right"><span style="font-size:15px;color:var(--ink);">发布</span></div>
+      </div>
+      <div style="flex:1;overflow:hidden;">
+        <div class="post-head">
+          <div class="post-av"></div>
+          <div><div class="post-name">小鱼</div><div class="post-time">今天 20:14</div></div>
+          <div class="post-badge">仅小鱼可见</div>
+        </div>
+        <div class="post-body">收拾到抽屉最底下翻出那张旧票根，纸边已经软了。原来那天是下过雨的。</div>
+        <div class="post-imgs"><div></div><div></div><div></div></div>
+        <div class="post-acts">
+          <svg class="ic"><use href="#i-heart"/></svg>
+          <svg class="ic"><use href="#i-comment"/></svg>
+          <svg class="ic"><use href="#i-share"/></svg>
+          <svg class="ic" style="margin-left:auto"><use href="#i-bookmark"/></svg>
+        </div>
+        <div class="post-sep"></div>
+        <div class="post-head">
+          <div class="post-av"></div>
+          <div><div class="post-name">小鱼</div><div class="post-time">昨天 22:40</div></div>
+          <div class="post-badge">仅小鱼可见</div>
+        </div>
+        <div class="post-body">今天雨小了一点，楼下的桂花落了一地，踩上去是湿的香。</div>
+        <div class="post-imgs"><div></div><div></div></div>
+        <div class="post-acts">
+          <svg class="ic"><use href="#i-heart"/></svg>
+          <svg class="ic"><use href="#i-comment"/></svg>
+          <svg class="ic"><use href="#i-share"/></svg>
+          <svg class="ic" style="margin-left:auto"><use href="#i-bookmark"/></svg>
+        </div>
+        <div class="post-sep"></div>
+      </div>
+      <div class="tabbar">
+        <div class="tab on"><div class="ti"><svg class="ic" style="width:22px;height:22px"><use href="#i-grid"/></svg></div><div class="tt">动态</div></div>
+        <div class="tab"><div class="ti"><svg class="ic" style="width:22px;height:22px"><use href="#i-chat"/></svg></div><div class="tt">聊天</div></div>
+        <div class="tab"><div class="ti"><svg class="ic" style="width:22px;height:22px"><use href="#i-person"/></svg></div><div class="tt">我的</div></div>
+      </div>
+    </div>
+    <div class="cap">动态 · 暗色</div>
+  </div>
+</div>
+
+<h2 class="page" style="margin-top:64px;">06 · 聊天信息<span class="sub">聊天页右上的「···」进来；删除走「最近删除」，15 天内能找回，拉黑只断她的主动</span></h2>
+<div class="grid">
+  <div class="cell">
+    <div class="phone light">
+      <div class="topbar" style="height:56px;">
+        <div class="back"><svg class="ic"><use href="#i-back"/></svg></div>
+        <div class="ttl" style="font-size:20px;line-height:28px;">聊天信息</div>
+      </div>
+      <div class="cs-profile" style="padding:20px 20px 22px;">
+        <div class="cs-av" style="width:64px;height:64px;"></div>
+        <div class="cs-name">小鱼</div>
+        <div class="cs-sub">她现在 · 平静</div>
+        <div class="cs-link">查看主页</div>
+      </div>
+      <div class="cs-body">
+        <div class="cs-group">
+          <div class="gtitle">关于她</div>
+          <div class="row"><span class="ric"><svg class="ic"><use href="#i-sliders"/></svg></span><span class="rk">角色设置</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="ric"><svg class="ic"><use href="#i-heart"/></svg></span><span class="rk">陪伴与回忆</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+        </div>
+        <div class="cs-group">
+          <div class="gtitle">聊天背景</div>
+          <div class="row"><span class="ric"><svg class="ic"><use href="#i-image"/></svg></span><span class="rk">跟随全局背景</span><span class="rv">跟随主题</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+        </div>
+        <div class="cs-group">
+          <div class="gtitle">她与你的边界</div>
+          <div class="row" style="height:62px;">
+            <span class="ric"><svg class="ic"><use href="#i-lock"/></svg></span>
+            <span class="rk" style="flex:1;display:flex;flex-direction:column;gap:2px;align-items:flex-start;">
+              <span>拉黑她</span>
+              <span style="font-size:11.5px;line-height:16px;color:var(--ink3);">她的主动消息、来电和做梦推送都会停下</span>
+            </span>
+            <div class="sw"></div>
+          </div>
+        </div>
+      </div>
+      <div class="delbar">
+        <div class="delbtn dangerink">删除她</div>
+        <div style="font-size:11.5px;line-height:17px;color:var(--ink3);margin-top:8px;text-align:center;">会先进「最近删除」，15 天内还能找回来</div>
+      </div>
+    </div>
+    <div class="cap">聊天信息 · 亮色</div>
+  </div>
+
+  <div class="cell">
+    <div class="phone dark">
+      <div class="topbar" style="height:56px;">
+        <div class="back"><svg class="ic"><use href="#i-back"/></svg></div>
+        <div class="ttl" style="font-size:20px;line-height:28px;">聊天信息</div>
+      </div>
+      <div class="cs-profile" style="padding:20px 20px 22px;">
+        <div class="cs-av" style="width:64px;height:64px;"></div>
+        <div class="cs-name">小鱼</div>
+        <div class="cs-sub">她现在 · 平静</div>
+        <div class="cs-link">查看主页</div>
+      </div>
+      <div class="cs-body">
+        <div class="cs-group">
+          <div class="gtitle">关于她</div>
+          <div class="row"><span class="ric"><svg class="ic"><use href="#i-sliders"/></svg></span><span class="rk">角色设置</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="ric"><svg class="ic"><use href="#i-heart"/></svg></span><span class="rk">陪伴与回忆</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+        </div>
+        <div class="cs-group">
+          <div class="gtitle">聊天背景</div>
+          <div class="row"><span class="ric"><svg class="ic"><use href="#i-image"/></svg></span><span class="rk">跟随全局背景</span><span class="rv">跟随主题</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+        </div>
+        <div class="cs-group">
+          <div class="gtitle">她与你的边界</div>
+          <div class="row" style="height:62px;">
+            <span class="ric"><svg class="ic"><use href="#i-lock"/></svg></span>
+            <span class="rk" style="flex:1;display:flex;flex-direction:column;gap:2px;align-items:flex-start;">
+              <span>拉黑她</span>
+              <span style="font-size:11.5px;line-height:16px;color:var(--ink3);">她的主动消息、来电和做梦推送都会停下</span>
+            </span>
+            <div class="sw"></div>
+          </div>
+        </div>
+      </div>
+      <div class="delbar">
+        <div class="delbtn dangerink">删除她</div>
+        <div style="font-size:11.5px;line-height:17px;color:var(--ink3);margin-top:8px;text-align:center;">会先进「最近删除」，15 天内还能找回来</div>
+      </div>
+    </div>
+    <div class="cap">聊天信息 · 暗色</div>
+  </div>
+</div>
+
+<h2 class="page" style="margin-top:64px;">06b · 最近删除<span class="sub">我的 → 聊天与外观 → 最近删除；默认角色也在这一列里，没有特权</span></h2>
+<div class="grid">
+  <div class="cell">
+    <div class="phone light">
+      <div class="topbar" style="height:56px;">
+        <div class="back"><svg class="ic"><use href="#i-back"/></svg></div>
+        <div class="ttl" style="font-size:20px;line-height:28px;">最近删除</div>
+      </div>
+      <div class="cs-body" style="flex:1;padding:0 20px;">
+        <div style="font-size:13px;line-height:20px;color:var(--ink3);padding-top:16px;">她们都还在，只是先住这儿。保留 15 天，到期后真正清空。</div>
+        <div style="margin-top:8px;">
+          <div class="trrow">
+            <div class="tav"></div>
+            <div class="twrap"><div class="tname">小鱼</div><div class="tmeta">还有 12 天</div></div>
+            <div class="tact">恢复</div>
+            <div class="tact dg">彻底删除</div>
+          </div>
+          <div class="trrow">
+            <div class="tav"></div>
+            <div class="twrap"><div class="tname">阿箬</div><div class="tmeta">还有 4 天</div></div>
+            <div class="tact">恢复</div>
+            <div class="tact dg">彻底删除</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">最近删除 · 亮色</div>
+  </div>
+
+  <div class="cell">
+    <div class="phone dark">
+      <div class="topbar" style="height:56px;">
+        <div class="back"><svg class="ic"><use href="#i-back"/></svg></div>
+        <div class="ttl" style="font-size:20px;line-height:28px;">最近删除</div>
+      </div>
+      <div class="cs-body" style="flex:1;padding:0 20px;">
+        <div style="font-size:13px;line-height:20px;color:var(--ink3);padding-top:16px;">她们都还在，只是先住这儿。保留 15 天，到期后真正清空。</div>
+        <div style="margin-top:8px;">
+          <div class="trrow">
+            <div class="tav"></div>
+            <div class="twrap"><div class="tname">小鱼</div><div class="tmeta">还有 12 天</div></div>
+            <div class="tact">恢复</div>
+            <div class="tact dg">彻底删除</div>
+          </div>
+          <div class="trrow">
+            <div class="tav"></div>
+            <div class="twrap"><div class="tname">阿箬</div><div class="tmeta">还有 4 天</div></div>
+            <div class="tact">恢复</div>
+            <div class="tact dg">彻底删除</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">最近删除 · 暗色</div>
+  </div>
+</div>
+
+<h2 class="page" style="margin-top:64px;">06c · 删除的两个确认<span class="sub">左：进暂存区，可以反悔；右：彻底清空，不可逆 —— 区别只在有没有退路</span></h2>
+<div class="grid">
+  <div class="cell">
+    <div class="phone light" style="position:relative;">
+      <div class="topbar" style="height:56px;">
+        <div class="back"><svg class="ic"><use href="#i-back"/></svg></div>
+        <div class="ttl" style="font-size:20px;line-height:28px;">聊天信息</div>
+      </div>
+      <div class="cs-profile" style="padding:20px 20px 22px;">
+        <div class="cs-av" style="width:64px;height:64px;"></div>
+        <div class="cs-name">小鱼</div>
+        <div class="cs-sub">她现在 · 平静</div>
+        <div class="cs-link">查看主页</div>
+      </div>
+      <div class="cs-body">
+        <div class="cs-group"><div class="gtitle">关于她</div>
+          <div class="row"><span class="ric"><svg class="ic"><use href="#i-sliders"/></svg></span><span class="rk">角色设置</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="ric"><svg class="ic"><use href="#i-heart"/></svg></span><span class="rk">陪伴与回忆</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+        </div>
+        <div class="cs-group"><div class="gtitle">聊天背景</div>
+          <div class="row"><span class="ric"><svg class="ic"><use href="#i-image"/></svg></span><span class="rk">跟随全局背景</span><span class="rv">跟随主题</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+        </div>
+        <div class="cs-group"><div class="gtitle">她与你的边界</div>
+          <div class="row" style="height:62px;"><span class="ric"><svg class="ic"><use href="#i-lock"/></svg></span>
+            <span class="rk" style="flex:1;display:flex;flex-direction:column;gap:2px;align-items:flex-start;"><span>拉黑她</span><span style="font-size:11.5px;line-height:16px;color:var(--ink3);">她的主动消息、来电和做梦推送都会停下</span></span>
+            <div class="sw"></div>
+          </div>
+        </div>
+      </div>
+      <div class="delbar">
+        <div class="delbtn dangerink">删除她</div>
+        <div style="font-size:11.5px;line-height:17px;color:var(--ink3);margin-top:8px;text-align:center;">会先进「最近删除」，15 天内还能找回来</div>
+      </div>
+      <div class="scrim">
+        <div class="dlg">
+          <div class="dt">删除小鱼？</div>
+          <div class="db">她会先被放进「最近删除」，15 天内随时可以恢复。这 15 天里她的对话、照片、记忆都还留着；到期之后才会真正清空，那之后就找不回来了。</div>
+          <div class="da"><div class="dact">取消</div><div class="dact dg">删除</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">删除她 · 确认 · 亮色</div>
+  </div>
+
+  <div class="cell">
+    <div class="phone dark" style="position:relative;">
+      <div class="topbar" style="height:56px;">
+        <div class="back"><svg class="ic"><use href="#i-back"/></svg></div>
+        <div class="ttl" style="font-size:20px;line-height:28px;">聊天信息</div>
+      </div>
+      <div class="cs-profile" style="padding:20px 20px 22px;">
+        <div class="cs-av" style="width:64px;height:64px;"></div>
+        <div class="cs-name">小鱼</div>
+        <div class="cs-sub">她现在 · 平静</div>
+        <div class="cs-link">查看主页</div>
+      </div>
+      <div class="cs-body">
+        <div class="cs-group"><div class="gtitle">关于她</div>
+          <div class="row"><span class="ric"><svg class="ic"><use href="#i-sliders"/></svg></span><span class="rk">角色设置</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="ric"><svg class="ic"><use href="#i-heart"/></svg></span><span class="rk">陪伴与回忆</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+        </div>
+        <div class="cs-group"><div class="gtitle">聊天背景</div>
+          <div class="row"><span class="ric"><svg class="ic"><use href="#i-image"/></svg></span><span class="rk">跟随全局背景</span><span class="rv">跟随主题</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+        </div>
+        <div class="cs-group"><div class="gtitle">她与你的边界</div>
+          <div class="row" style="height:62px;"><span class="ric"><svg class="ic"><use href="#i-lock"/></svg></span>
+            <span class="rk" style="flex:1;display:flex;flex-direction:column;gap:2px;align-items:flex-start;"><span>拉黑她</span><span style="font-size:11.5px;line-height:16px;color:var(--ink3);">她的主动消息、来电和做梦推送都会停下</span></span>
+            <div class="sw"></div>
+          </div>
+        </div>
+      </div>
+      <div class="delbar">
+        <div class="delbtn dangerink">删除她</div>
+        <div style="font-size:11.5px;line-height:17px;color:var(--ink3);margin-top:8px;text-align:center;">会先进「最近删除」，15 天内还能找回来</div>
+      </div>
+      <div class="scrim">
+        <div class="dlg">
+          <div class="dt">删除小鱼？</div>
+          <div class="db">她会先被放进「最近删除」，15 天内随时可以恢复。这 15 天里她的对话、照片、记忆都还留着；到期之后才会真正清空，那之后就找不回来了。</div>
+          <div class="da"><div class="dact">取消</div><div class="dact dg">删除</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">删除她 · 确认 · 暗色</div>
+  </div>
+
+  <div class="cell">
+    <div class="phone light" style="position:relative;">
+      <div class="topbar" style="height:56px;">
+        <div class="back"><svg class="ic"><use href="#i-back"/></svg></div>
+        <div class="ttl" style="font-size:20px;line-height:28px;">最近删除</div>
+      </div>
+      <div class="cs-body" style="flex:1;padding:0 20px;">
+        <div style="font-size:13px;line-height:20px;color:var(--ink3);padding-top:16px;">她们都还在，只是先住这儿。保留 15 天，到期后真正清空。</div>
+        <div style="margin-top:8px;">
+          <div class="trrow">
+            <div class="tav"></div>
+            <div class="twrap"><div class="tname">小鱼</div><div class="tmeta">还有 12 天</div></div>
+            <div class="tact">恢复</div>
+            <div class="tact dg">彻底删除</div>
+          </div>
+          <div class="trrow">
+            <div class="tav"></div>
+            <div class="twrap"><div class="tname">阿箬</div><div class="tmeta">还有 4 天</div></div>
+            <div class="tact">恢复</div>
+            <div class="tact dg">彻底删除</div>
+          </div>
+        </div>
+      </div>
+      <div class="scrim">
+        <div class="dlg">
+          <div class="dt">彻底删除小鱼？</div>
+          <div class="db">她的对话记录、照片、记忆、关系档案、通话记录会立刻清空，这一次没有后悔的余地。</div>
+          <div class="da"><div class="dact">取消</div><div class="dact dg">彻底删除</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">彻底删除 · 确认 · 亮色</div>
+  </div>
+
+  <div class="cell">
+    <div class="phone dark" style="position:relative;">
+      <div class="topbar" style="height:56px;">
+        <div class="back"><svg class="ic"><use href="#i-back"/></svg></div>
+        <div class="ttl" style="font-size:20px;line-height:28px;">最近删除</div>
+      </div>
+      <div class="cs-body" style="flex:1;padding:0 20px;">
+        <div style="font-size:13px;line-height:20px;color:var(--ink3);padding-top:16px;">她们都还在，只是先住这儿。保留 15 天，到期后真正清空。</div>
+        <div style="margin-top:8px;">
+          <div class="trrow">
+            <div class="tav"></div>
+            <div class="twrap"><div class="tname">小鱼</div><div class="tmeta">还有 12 天</div></div>
+            <div class="tact">恢复</div>
+            <div class="tact dg">彻底删除</div>
+          </div>
+          <div class="trrow">
+            <div class="tav"></div>
+            <div class="twrap"><div class="tname">阿箬</div><div class="tmeta">还有 4 天</div></div>
+            <div class="tact">恢复</div>
+            <div class="tact dg">彻底删除</div>
+          </div>
+        </div>
+      </div>
+      <div class="scrim">
+        <div class="dlg">
+          <div class="dt">彻底删除小鱼？</div>
+          <div class="db">她的对话记录、照片、记忆、关系档案、通话记录会立刻清空，这一次没有后悔的余地。</div>
+          <div class="da"><div class="dact">取消</div><div class="dact dg">彻底删除</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">彻底删除 · 确认 · 暗色</div>
+  </div>
+</div>
+
+<h2 class="page" style="margin-top:64px;">07 · 主题<span class="sub">三个单选，选中只给浅紫底和紫勾</span></h2>
+<div class="grid">
+  <div class="cell">
+    <div class="phone light">
+      <div class="topbar" style="height:56px;"><div class="back"><svg class="ic"><use href="#i-back"/></svg></div><div class="ttl" style="font-size:20px;line-height:28px;">主题</div></div>
+      <div style="height:1px;background:var(--line);"></div>
+      <div class="sub">
+        <div class="grp">
+          <div class="gtitle">外观模式</div>
+          <div class="choice on"><div><div class="ct">跟随系统</div><div class="cd">系统切到深色时，这里也跟着变</div></div><span class="tick"><svg class="ic"><use href="#i-check"/></svg></span></div>
+          <div class="choice"><div><div class="ct">浅色</div></div><span class="tick"><svg class="ic"><use href="#i-check"/></svg></span></div>
+          <div class="choice"><div><div class="ct">深色</div></div><span class="tick"><svg class="ic"><use href="#i-check"/></svg></span></div>
+        </div>
+        <div class="note">选完之后立刻生效，不用重启。</div>
+      </div>
+    </div>
+    <div class="cap">主题 · 亮色</div>
+  </div>
+  <div class="cell">
+    <div class="phone dark">
+      <div class="topbar" style="height:56px;"><div class="back"><svg class="ic"><use href="#i-back"/></svg></div><div class="ttl" style="font-size:20px;line-height:28px;">主题</div></div>
+      <div style="height:1px;background:var(--line);"></div>
+      <div class="sub">
+        <div class="grp">
+          <div class="gtitle">外观模式</div>
+          <div class="choice on"><div><div class="ct">跟随系统</div><div class="cd">系统切到深色时，这里也跟着变</div></div><span class="tick"><svg class="ic"><use href="#i-check"/></svg></span></div>
+          <div class="choice"><div><div class="ct">浅色</div></div><span class="tick"><svg class="ic"><use href="#i-check"/></svg></span></div>
+          <div class="choice"><div><div class="ct">深色</div></div><span class="tick"><svg class="ic"><use href="#i-check"/></svg></span></div>
+        </div>
+        <div class="note">选完之后立刻生效，不用重启。</div>
+      </div>
+    </div>
+    <div class="cap">主题 · 暗色</div>
+  </div>
+</div>
+
+<h2 class="page" style="margin-top:64px;">08 · 聊天背景<span class="sub">全局默认背景，单个对话可覆盖</span></h2>
+<div class="grid">
+  <div class="cell">
+    <div class="phone light">
+      <div class="topbar" style="height:56px;"><div class="back"><svg class="ic"><use href="#i-back"/></svg></div><div class="ttl" style="font-size:20px;line-height:28px;">聊天背景</div></div>
+      <div style="height:1px;background:var(--line);"></div>
+      <div class="sub">
+        <div class="preview">
+          <div class="pv her">你回来啦。今天路上冷不冷？</div>
+          <div class="pv me">有点，风比昨天大。</div>
+        </div>
+        <div class="grp">
+          <div class="gtitle">内置背景</div>
+          <div class="bggrid"><div class="on"></div><div></div><div></div><div></div></div>
+        </div>
+        <div class="grp">
+          <div class="gtitle">自定义背景</div>
+          <div class="row" style="border-bottom:none;"><span class="ric"><svg class="ic"><use href="#i-image"/></svg></span><span class="rk">从相册选一张</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="note">只存在这台手机上，换一张不影响记忆。</div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">聊天背景 · 亮色</div>
+  </div>
+  <div class="cell">
+    <div class="phone dark">
+      <div class="topbar" style="height:56px;"><div class="back"><svg class="ic"><use href="#i-back"/></svg></div><div class="ttl" style="font-size:20px;line-height:28px;">聊天背景</div></div>
+      <div style="height:1px;background:var(--line);"></div>
+      <div class="sub">
+        <div class="preview">
+          <div class="pv her">你回来啦。今天路上冷不冷？</div>
+          <div class="pv me">有点，风比昨天大。</div>
+        </div>
+        <div class="grp">
+          <div class="gtitle">内置背景</div>
+          <div class="bggrid"><div class="on"></div><div></div><div></div><div></div></div>
+        </div>
+        <div class="grp">
+          <div class="gtitle">自定义背景</div>
+          <div class="row" style="border-bottom:none;"><span class="ric"><svg class="ic"><use href="#i-image"/></svg></span><span class="rk">从相册选一张</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="note">只存在这台手机上，换一张不影响记忆。</div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">聊天背景 · 暗色</div>
+  </div>
+</div>
+
+<h2 class="page" style="margin-top:64px;">09 · 角色发图<span class="sub">开关 + 每天上限 + 模型 ID + 自拍</span></h2>
+<div class="grid">
+  <div class="cell">
+    <div class="phone light">
+      <div class="topbar" style="height:56px;"><div class="back"><svg class="ic"><use href="#i-back"/></svg></div><div class="ttl" style="font-size:20px;line-height:28px;">角色发图</div></div>
+      <div style="height:1px;background:var(--line);"></div>
+      <div class="sub">
+        <div class="grp">
+          <div class="gtitle">聊天发图</div>
+          <div class="row" style="border-bottom:none;"><span class="ric"><svg class="ic"><use href="#i-image"/></svg></span><span class="rk">允许角色发图</span><div class="sw on"></div></div>
+          <div class="note">按聊天内容生成图片，或在回忆时复用聊天里的旧图。</div>
+        </div>
+        <div class="grp">
+          <div class="gtitle">每天最多生成</div>
+          <div class="chips"><div>1 张</div><div class="on">3 张</div><div>5 张</div></div>
+          <div class="note">用聊天模型的方舟 Key 生成，一张约 ¥0.12。达到上限后可分享已有图片。</div>
+        </div>
+        <div class="grp">
+          <div class="gtitle">图片模型</div>
+          <div class="box ro"><span>doubao-seedream-4-0</span><span class="tail"><svg class="ic"><use href="#i-copy"/></svg></span></div>
+          <div class="note">留空会回退到默认值。</div>
+        </div>
+        <div class="grp">
+          <div class="gtitle">自拍</div>
+          <div class="row" style="border-bottom:none;"><span class="ric"><svg class="ic"><use href="#i-person"/></svg></span><span class="rk">生成自拍</span><div class="sw"></div></div>
+          <div class="note">用你设的头像做参考，保持长相一致；没设头像时只发生活场景。</div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">角色发图 · 亮色</div>
+  </div>
+  <div class="cell">
+    <div class="phone dark">
+      <div class="topbar" style="height:56px;"><div class="back"><svg class="ic"><use href="#i-back"/></svg></div><div class="ttl" style="font-size:20px;line-height:28px;">角色发图</div></div>
+      <div style="height:1px;background:var(--line);"></div>
+      <div class="sub">
+        <div class="grp">
+          <div class="gtitle">聊天发图</div>
+          <div class="row" style="border-bottom:none;"><span class="ric"><svg class="ic"><use href="#i-image"/></svg></span><span class="rk">允许角色发图</span><div class="sw on"></div></div>
+          <div class="note">按聊天内容生成图片，或在回忆时复用聊天里的旧图。</div>
+        </div>
+        <div class="grp">
+          <div class="gtitle">每天最多生成</div>
+          <div class="chips"><div>1 张</div><div class="on">3 张</div><div>5 张</div></div>
+          <div class="note">用聊天模型的方舟 Key 生成，一张约 ¥0.12。达到上限后可分享已有图片。</div>
+        </div>
+        <div class="grp">
+          <div class="gtitle">图片模型</div>
+          <div class="box ro"><span>doubao-seedream-4-0</span><span class="tail"><svg class="ic"><use href="#i-copy"/></svg></span></div>
+          <div class="note">留空会回退到默认值。</div>
+        </div>
+        <div class="grp">
+          <div class="gtitle">自拍</div>
+          <div class="row" style="border-bottom:none;"><span class="ric"><svg class="ic"><use href="#i-person"/></svg></span><span class="rk">生成自拍</span><div class="sw"></div></div>
+          <div class="note">用你设的头像做参考，保持长相一致；没设头像时只发生活场景。</div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">角色发图 · 暗色</div>
+  </div>
+</div>
+
+<h2 class="page" style="margin-top:64px;">10 · 对话<span class="sub">回复方式是单选，主动操作是数字字段</span></h2>
+<div class="grid">
+  <div class="cell">
+    <div class="phone light">
+      <div class="topbar" style="height:56px;"><div class="back"><svg class="ic"><use href="#i-back"/></svg></div><div class="ttl" style="font-size:20px;line-height:28px;">对话</div></div>
+      <div style="height:1px;background:var(--line);"></div>
+      <div class="sub">
+        <div class="grp">
+          <div class="gtitle">回复方式</div>
+          <div class="choice on"><div><div class="ct">看情况</div><div class="cd">按当条消息决定发文字还是语音</div></div><span class="tick"><svg class="ic"><use href="#i-check"/></svg></span></div>
+          <div class="choice"><div><div class="ct">只发文字</div></div><span class="tick"><svg class="ic"><use href="#i-check"/></svg></span></div>
+          <div class="choice"><div><div class="ct">只发语音</div></div><span class="tick"><svg class="ic"><use href="#i-check"/></svg></span></div>
+        </div>
+        <div class="grp">
+          <div class="gtitle">主动操作</div>
+          <div class="field"><div class="label">最多连续操作</div><div class="box"><span>3</span></div></div>
+          <div class="row" style="border-bottom:none;margin-top:4px;"><span class="rk">从成功里学习</span><div class="sw on"></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">对话 · 亮色</div>
+  </div>
+  <div class="cell">
+    <div class="phone dark">
+      <div class="topbar" style="height:56px;"><div class="back"><svg class="ic"><use href="#i-back"/></svg></div><div class="ttl" style="font-size:20px;line-height:28px;">对话</div></div>
+      <div style="height:1px;background:var(--line);"></div>
+      <div class="sub">
+        <div class="grp">
+          <div class="gtitle">回复方式</div>
+          <div class="choice on"><div><div class="ct">看情况</div><div class="cd">按当条消息决定发文字还是语音</div></div><span class="tick"><svg class="ic"><use href="#i-check"/></svg></span></div>
+          <div class="choice"><div><div class="ct">只发文字</div></div><span class="tick"><svg class="ic"><use href="#i-check"/></svg></span></div>
+          <div class="choice"><div><div class="ct">只发语音</div></div><span class="tick"><svg class="ic"><use href="#i-check"/></svg></span></div>
+        </div>
+        <div class="grp">
+          <div class="gtitle">主动操作</div>
+          <div class="field"><div class="label">最多连续操作</div><div class="box"><span>3</span></div></div>
+          <div class="row" style="border-bottom:none;margin-top:4px;"><span class="rk">从成功里学习</span><div class="sw on"></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">对话 · 暗色</div>
+  </div>
+</div>
+
+<h2 class="page" style="margin-top:64px;">11 · 存储<span class="sub">三条路径，等宽小字、可复制</span></h2>
+<div class="grid">
+  <div class="cell">
+    <div class="phone light">
+      <div class="topbar" style="height:56px;"><div class="back"><svg class="ic"><use href="#i-back"/></svg></div><div class="ttl" style="font-size:20px;line-height:28px;">存储</div></div>
+      <div style="height:1px;background:var(--line);"></div>
+      <div class="sub">
+        <div class="grp">
+          <div class="gtitle">目录</div>
+          <div class="row" style="height:auto;padding:12px 0;"><div style="flex:1;"><div class="rk">技能</div><div class="path" style="margin-top:3px;font-family:ui-monospace,Menlo,monospace;">/data/user/0/dev.lily.app/files/skills</div></div><span class="chev"><svg class="ic"><use href="#i-copy"/></svg></span></div>
+          <div class="row" style="height:auto;padding:12px 0;"><div style="flex:1;"><div class="rk">记忆</div><div class="path" style="margin-top:3px;font-family:ui-monospace,Menlo,monospace;">/data/user/0/dev.lily.app/files/memory</div></div><span class="chev"><svg class="ic"><use href="#i-copy"/></svg></span></div>
+          <div class="row" style="height:auto;padding:12px 0;border-bottom:none;"><div style="flex:1;"><div class="rk">运行记录</div><div class="path" style="margin-top:3px;font-family:ui-monospace,Menlo,monospace;">/data/user/0/dev.lily.app/files/traces</div></div><span class="chev"><svg class="ic"><use href="#i-copy"/></svg></span></div>
+        </div>
+        <div class="note">这些目录都在应用私有空间，覆盖安装不会清空；图片按张数、体积与天数自动回收。</div>
+      </div>
+    </div>
+    <div class="cap">存储 · 亮色</div>
+  </div>
+  <div class="cell">
+    <div class="phone dark">
+      <div class="topbar" style="height:56px;"><div class="back"><svg class="ic"><use href="#i-back"/></svg></div><div class="ttl" style="font-size:20px;line-height:28px;">存储</div></div>
+      <div style="height:1px;background:var(--line);"></div>
+      <div class="sub">
+        <div class="grp">
+          <div class="gtitle">目录</div>
+          <div class="row" style="height:auto;padding:12px 0;"><div style="flex:1;"><div class="rk">技能</div><div class="path" style="margin-top:3px;font-family:ui-monospace,Menlo,monospace;">/data/user/0/dev.lily.app/files/skills</div></div><span class="chev"><svg class="ic"><use href="#i-copy"/></svg></span></div>
+          <div class="row" style="height:auto;padding:12px 0;"><div style="flex:1;"><div class="rk">记忆</div><div class="path" style="margin-top:3px;font-family:ui-monospace,Menlo,monospace;">/data/user/0/dev.lily.app/files/memory</div></div><span class="chev"><svg class="ic"><use href="#i-copy"/></svg></span></div>
+          <div class="row" style="height:auto;padding:12px 0;border-bottom:none;"><div style="flex:1;"><div class="rk">运行记录</div><div class="path" style="margin-top:3px;font-family:ui-monospace,Menlo,monospace;">/data/user/0/dev.lily.app/files/traces</div></div><span class="chev"><svg class="ic"><use href="#i-copy"/></svg></span></div>
+        </div>
+        <div class="note">这些目录都在应用私有空间，覆盖安装不会清空；图片按张数、体积与天数自动回收。</div>
+      </div>
+    </div>
+    <div class="cap">存储 · 暗色</div>
+  </div>
+</div>
+
+<h2 class="page" style="margin-top:64px;">12 · 技能<span class="sub">卡片式，一行一个技能</span></h2>
+<div class="grid">
+  <div class="cell">
+    <div class="phone light">
+      <div class="topbar" style="height:56px;"><div class="back"><svg class="ic"><use href="#i-back"/></svg></div><div class="ttl" style="font-size:20px;line-height:28px;">技能</div><div class="right" style="gap:6px;color:var(--ink2);"><svg class="ic"><use href="#i-refresh"/></svg></div></div>
+      <div style="height:1px;background:var(--line);"></div>
+      <div class="sub">
+        <div class="skl"><div class="n">备忘录</div><div class="d">记下你说过的事，在她需要时翻出来；不会主动提醒。</div><div class="chip">笔记</div><div class="src">bundled/memo.md</div></div>
+        <div class="skl"><div class="n">天气</div><div class="d">查当前天气与未来几小时，需要外部服务里的天气接口。</div><div class="chip">高德 · 天气</div><div class="src">bundled/weather.md</div></div>
+        <div class="skl"><div class="n">读书</div><div class="d">记录在读与想读的书，按进度提醒你翻页。</div><div class="src">local/reading.md</div></div>
+      </div>
+    </div>
+    <div class="cap">技能 · 亮色</div>
+  </div>
+  <div class="cell">
+    <div class="phone dark">
+      <div class="topbar" style="height:56px;"><div class="back"><svg class="ic"><use href="#i-back"/></svg></div><div class="ttl" style="font-size:20px;line-height:28px;">技能</div><div class="right" style="gap:6px;color:var(--ink2);"><svg class="ic"><use href="#i-refresh"/></svg></div></div>
+      <div style="height:1px;background:var(--line);"></div>
+      <div class="sub">
+        <div class="skl"><div class="n">备忘录</div><div class="d">记下你说过的事，在她需要时翻出来；不会主动提醒。</div><div class="chip">笔记</div><div class="src">bundled/memo.md</div></div>
+        <div class="skl"><div class="n">天气</div><div class="d">查当前天气与未来几小时，需要外部服务里的天气接口。</div><div class="chip">高德 · 天气</div><div class="src">bundled/weather.md</div></div>
+        <div class="skl"><div class="n">读书</div><div class="d">记录在读与想读的书，按进度提醒你翻页。</div><div class="src">local/reading.md</div></div>
+      </div>
+    </div>
+    <div class="cap">技能 · 暗色</div>
+  </div>
+</div>
+
+<h2 class="page" style="margin-top:64px;">13 · 外部服务<span class="sub">勾选服务 + 填 Key，底部保存与测试</span></h2>
+<div class="grid">
+  <div class="cell">
+    <div class="phone light">
+      <div class="topbar" style="height:56px;"><div class="back"><svg class="ic"><use href="#i-back"/></svg></div><div class="ttl" style="font-size:20px;line-height:28px;">外部服务</div></div>
+      <div style="height:1px;background:var(--line);"></div>
+      <div class="sub" style="gap:18px;">
+        <div class="grp">
+          <div class="gtitle">已启用</div>
+          <div class="row" style="border-bottom:none;"><span class="rk">已启用 2 个</span><div class="btnline" style="height:32px;padding:0 14px;font-size:12.5px;margin-left:auto;">推荐组合</div></div>
+        </div>
+        <div class="grp">
+          <div class="gtitle">地图与位置</div>
+          <div class="svc"><div style="flex:1;"><div class="sn">高德地图</div><div class="sd">查地点、路线与周边；只读取，不改你的行程。</div></div><div class="sw on"></div></div>
+          <div class="svc"><div style="flex:1;"><div class="sn">天气</div><div class="sd">当前天气与逐小时预报。</div></div><div class="sw"></div></div>
+        </div>
+        <div class="grp">
+          <div class="gtitle">效率</div>
+          <div class="svc"><div style="flex:1;"><div class="sn">日历</div><div class="sd">读你给的日程，提醒前先问一声。</div></div><div class="sw"></div></div>
+          <div class="svc"><div style="flex:1;"><div class="sn">待办</div><div class="sd">记下要做的事，做完打勾，不会催你。</div></div><div class="sw on"></div></div>
+        </div>
+        <div class="grp">
+          <div class="gtitle">自定义</div>
+          <div class="row" style="border-bottom:none;"><span class="ric"><svg class="ic"><use href="#i-plus"/></svg></span><span class="rk" style="color:var(--ink2);">添加服务器</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+        </div>
+      </div>
+      <div class="footbar"><div class="btnsolid">保存</div><div class="btnline">测试连接</div></div>
+    </div>
+    <div class="cap">外部服务 · 亮色</div>
+  </div>
+  <div class="cell">
+    <div class="phone dark">
+      <div class="topbar" style="height:56px;"><div class="back"><svg class="ic"><use href="#i-back"/></svg></div><div class="ttl" style="font-size:20px;line-height:28px;">外部服务</div></div>
+      <div style="height:1px;background:var(--line);"></div>
+      <div class="sub" style="gap:18px;">
+        <div class="grp">
+          <div class="gtitle">已启用</div>
+          <div class="row" style="border-bottom:none;"><span class="rk">已启用 2 个</span><div class="btnline" style="height:32px;padding:0 14px;font-size:12.5px;margin-left:auto;">推荐组合</div></div>
+        </div>
+        <div class="grp">
+          <div class="gtitle">地图与位置</div>
+          <div class="svc"><div style="flex:1;"><div class="sn">高德地图</div><div class="sd">查地点、路线与周边；只读取，不改你的行程。</div></div><div class="sw on"></div></div>
+          <div class="svc"><div style="flex:1;"><div class="sn">天气</div><div class="sd">当前天气与逐小时预报。</div></div><div class="sw"></div></div>
+        </div>
+        <div class="grp">
+          <div class="gtitle">效率</div>
+          <div class="svc"><div style="flex:1;"><div class="sn">日历</div><div class="sd">读你给的日程，提醒前先问一声。</div></div><div class="sw"></div></div>
+          <div class="svc"><div style="flex:1;"><div class="sn">待办</div><div class="sd">记下要做的事，做完打勾，不会催你。</div></div><div class="sw on"></div></div>
+        </div>
+        <div class="grp">
+          <div class="gtitle">自定义</div>
+          <div class="row" style="border-bottom:none;"><span class="ric"><svg class="ic"><use href="#i-plus"/></svg></span><span class="rk" style="color:var(--ink2);">添加服务器</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+        </div>
+      </div>
+      <div class="footbar"><div class="btnsolid">保存</div><div class="btnline">测试连接</div></div>
+    </div>
+    <div class="cap">外部服务 · 暗色</div>
+  </div>
+</div>
+
+<h2 class="page" style="margin-top:64px;">14 · 安全<span class="sub">拒绝统计用三个数字，不加图表</span></h2>
+<div class="grid">
+  <div class="cell">
+    <div class="phone light">
+      <div class="topbar" style="height:56px;"><div class="back"><svg class="ic"><use href="#i-back"/></svg></div><div class="ttl" style="font-size:20px;line-height:28px;">安全</div><div class="right"><span style="font-size:14px;color:var(--danger);">清空</span></div></div>
+      <div style="height:1px;background:var(--line);"></div>
+      <div class="sub">
+        <div class="note">这里只记录被拦下的话题和重试次数，不存原文。</div>
+        <div class="statcard">
+          <div style="display:flex;align-items:center;"><div class="gtitle" style="flex:1;">拒绝统计</div><span style="font-size:12.5px;color:var(--ink3);">清空</span></div>
+          <div class="statrow">
+            <div class="stat"><div class="num">128</div><div class="lb">今天检查</div></div>
+            <div class="stat"><div class="num">3</div><div class="lb">被拒绝</div></div>
+            <div class="stat"><div class="num">1</div><div class="lb">一小时重试</div></div>
+          </div>
+        </div>
+        <div class="grp">
+          <div class="gtitle">最近</div>
+          <div class="row" style="height:auto;padding:12px 0;"><div style="flex:1;"><div class="rk" style="font-size:14px;">隐私话题 · 已改写</div><div class="note" style="margin-top:2px;">今天 21:03</div></div></div>
+          <div class="row" style="height:auto;padding:12px 0;"><div style="flex:1;"><div class="rk" style="font-size:14px;">自伤话题 · 转安全回复</div><div class="note" style="margin-top:2px;">昨天 23:41</div></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">安全 · 亮色</div>
+  </div>
+  <div class="cell">
+    <div class="phone dark">
+      <div class="topbar" style="height:56px;"><div class="back"><svg class="ic"><use href="#i-back"/></svg></div><div class="ttl" style="font-size:20px;line-height:28px;">安全</div><div class="right"><span style="font-size:14px;color:var(--danger);">清空</span></div></div>
+      <div style="height:1px;background:var(--line);"></div>
+      <div class="sub">
+        <div class="note">这里只记录被拦下的话题和重试次数，不存原文。</div>
+        <div class="statcard">
+          <div style="display:flex;align-items:center;"><div class="gtitle" style="flex:1;">拒绝统计</div><span style="font-size:12.5px;color:var(--ink3);">清空</span></div>
+          <div class="statrow">
+            <div class="stat"><div class="num">128</div><div class="lb">今天检查</div></div>
+            <div class="stat"><div class="num">3</div><div class="lb">被拒绝</div></div>
+            <div class="stat"><div class="num">1</div><div class="lb">一小时重试</div></div>
+          </div>
+        </div>
+        <div class="grp">
+          <div class="gtitle">最近</div>
+          <div class="row" style="height:auto;padding:12px 0;"><div style="flex:1;"><div class="rk" style="font-size:14px;">隐私话题 · 已改写</div><div class="note" style="margin-top:2px;">今天 21:03</div></div></div>
+          <div class="row" style="height:auto;padding:12px 0;"><div style="flex:1;"><div class="rk" style="font-size:14px;">自伤话题 · 转安全回复</div><div class="note" style="margin-top:2px;">昨天 23:41</div></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">安全 · 暗色</div>
+  </div>
+</div>
+
+<h2 class="page" style="margin-top:64px;">15 · 我的资料<span class="sub">顶部资料卡 + 三组字段，行高 48</span></h2>
+<div class="grid">
+  <div class="cell">
+    <div class="phone light">
+      <div class="topbar" style="height:56px;"><div class="back"><svg class="ic"><use href="#i-back"/></svg></div><div class="ttl" style="font-size:20px;line-height:28px;">我的资料</div></div>
+      <div style="height:1px;background:var(--line);"></div>
+      <div class="sub" style="gap:0;">
+        <div style="display:flex;align-items:center;gap:14px;padding:18px 0 20px;">
+          <div style="width:60px;height:60px;border-radius:50%;background:var(--surface2);"></div>
+          <div style="flex:1;"><div style="font-size:16px;line-height:24px;font-weight:600;">陈亮安</div><div class="note" style="margin-top:2px;">点头像换照片 · 点开修改资料</div></div>
+        </div>
+        <div class="group" style="margin-top:4px;">
+          <div class="gtitle">基本资料</div>
+          <div class="row"><span class="rk">昵称</span><span class="rv">陈亮安</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="rk">性别</span><span class="rv">男</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="rk">生日</span><span class="rv">1998-03-05</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="rk">家乡</span><span class="rv">未填</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="rk">常驻城市</span><span class="rv">贵阳</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+        </div>
+        <div class="group" style="margin-top:20px;">
+          <div class="gtitle">生活</div>
+          <div class="row"><span class="rk">学历</span><span class="rv">本科</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="rk">宠物</span><span class="rv">一只叫团子的猫</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="rk">感情状态</span><span class="rv">单身</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+        </div>
+        <div class="group" style="margin-top:20px;">
+          <div class="gtitle">关于你</div>
+          <div class="row"><span class="rk">外貌特征</span><span class="rv">短发、戴眼镜</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="rk">性格设定</span><span class="rv">慢热、爱开玩笑</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="rk">语气设定</span><span class="rv" style="color:var(--ink3);">未填</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">我的资料 · 亮色</div>
+  </div>
+  <div class="cell">
+    <div class="phone dark">
+      <div class="topbar" style="height:56px;"><div class="back"><svg class="ic"><use href="#i-back"/></svg></div><div class="ttl" style="font-size:20px;line-height:28px;">我的资料</div></div>
+      <div style="height:1px;background:var(--line);"></div>
+      <div class="sub" style="gap:0;">
+        <div style="display:flex;align-items:center;gap:14px;padding:18px 0 20px;">
+          <div style="width:60px;height:60px;border-radius:50%;background:var(--surface2);"></div>
+          <div style="flex:1;"><div style="font-size:16px;line-height:24px;font-weight:600;">陈亮安</div><div class="note" style="margin-top:2px;">点头像换照片 · 点开修改资料</div></div>
+        </div>
+        <div class="group" style="margin-top:4px;">
+          <div class="gtitle">基本资料</div>
+          <div class="row"><span class="rk">昵称</span><span class="rv">陈亮安</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="rk">性别</span><span class="rv">男</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="rk">生日</span><span class="rv">1998-03-05</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="rk">家乡</span><span class="rv" style="color:var(--ink3);">未填</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="rk">常驻城市</span><span class="rv">贵阳</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+        </div>
+        <div class="group" style="margin-top:20px;">
+          <div class="gtitle">生活</div>
+          <div class="row"><span class="rk">学历</span><span class="rv">本科</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="rk">宠物</span><span class="rv">一只叫团子的猫</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="rk">感情状态</span><span class="rv">单身</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+        </div>
+        <div class="group" style="margin-top:20px;">
+          <div class="gtitle">关于你</div>
+          <div class="row"><span class="rk">外貌特征</span><span class="rv">短发、戴眼镜</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="rk">性格设定</span><span class="rv">慢热、爱开玩笑</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="rk">语气设定</span><span class="rv" style="color:var(--ink3);">未填</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">我的资料 · 暗色</div>
+  </div>
+</div>
+
+<h2 class="page" style="margin-top:64px;">16 · 角色编辑<span class="sub">顶部一张资料卡 + 三组字段，底部保存</span></h2>
+<div class="grid">
+  <div class="cell">
+    <div class="phone light">
+      <div class="topbar" style="height:56px;"><div class="back"><svg class="ic"><use href="#i-back"/></svg></div><div class="ttl" style="font-size:20px;line-height:28px;">小鱼的设置</div></div>
+      <div style="height:1px;background:var(--line);"></div>
+      <div class="sub" style="gap:0;">
+        <div class="pcard" style="margin-top:16px;">
+          <div class="bigav"></div>
+          <div style="flex:1;"><div style="font-size:16px;line-height:24px;font-weight:600;">小鱼</div><div class="ptag">女 · 26 岁 · 贵阳</div><div class="ptag" style="color:var(--accent);">3 项还没填</div></div>
+          <span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span>
+        </div>
+        <div class="group" style="margin-top:20px;">
+          <div class="gtitle">基本资料</div>
+          <div class="row"><span class="rk">昵称</span><span class="rv">小鱼</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="rk">性别</span><span class="rv">女</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="rk">生日</span><span class="rv">11-08 · 26 岁</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="rk">家乡</span><span class="rv">未填</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="rk">常驻城市</span><span class="rv">贵阳</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+        </div>
+        <div class="group" style="margin-top:20px;">
+          <div class="gtitle">关于角色</div>
+          <div class="row"><span class="rk">性格设定</span><span class="rv">慢热、爱开玩笑</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="rk">语气设定</span><span class="rv">说话慢一点，常用短句</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="rk">人设</span><span class="rv">未填</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+        </div>
+      </div>
+      <div class="savebar"><span class="dirty">改动即时保存</span><div class="btn">保存</div></div>
+    </div>
+    <div class="cap">角色编辑 · 亮色</div>
+  </div>
+  <div class="cell">
+    <div class="phone dark">
+      <div class="topbar" style="height:56px;"><div class="back"><svg class="ic"><use href="#i-back"/></svg></div><div class="ttl" style="font-size:20px;line-height:28px;">小鱼的设置</div></div>
+      <div style="height:1px;background:var(--line);"></div>
+      <div class="sub" style="gap:0;">
+        <div class="pcard" style="margin-top:16px;">
+          <div class="bigav"></div>
+          <div style="flex:1;"><div style="font-size:16px;line-height:24px;font-weight:600;">小鱼</div><div class="ptag">女 · 26 岁 · 贵阳</div><div class="ptag" style="color:var(--accent);">3 项还没填</div></div>
+          <span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span>
+        </div>
+        <div class="group" style="margin-top:20px;">
+          <div class="gtitle">基本资料</div>
+          <div class="row"><span class="rk">昵称</span><span class="rv">小鱼</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="rk">性别</span><span class="rv">女</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="rk">生日</span><span class="rv">11-08 · 26 岁</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="rk">家乡</span><span class="rv" style="color:var(--ink3);">未填</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="rk">常驻城市</span><span class="rv">贵阳</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+        </div>
+        <div class="group" style="margin-top:20px;">
+          <div class="gtitle">关于角色</div>
+          <div class="row"><span class="rk">性格设定</span><span class="rv">慢热、爱开玩笑</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="rk">语气设定</span><span class="rv">说话慢一点，常用短句</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          <div class="row"><span class="rk">人设</span><span class="rv" style="color:var(--ink3);">未填</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+        </div>
+      </div>
+      <div class="savebar"><span class="dirty">改动即时保存</span><div class="btn">保存</div></div>
+    </div>
+    <div class="cap">角色编辑 · 暗色</div>
+  </div>
+</div>
+
+<h2 class="page" style="margin-top:64px;">17 · 声音克隆<span class="sub">音色行 + 录制入口，只有一个默认声音</span></h2>
+<div class="grid">
+  <div class="cell">
+    <div class="phone light">
+      <div class="topbar" style="height:56px;"><div class="back"><svg class="ic"><use href="#i-back"/></svg></div><div class="ttl" style="font-size:20px;line-height:28px;">声音克隆</div></div>
+      <div style="height:1px;background:var(--line);"></div>
+      <div class="sub">
+        <div class="note">一男一女两个默认音色；克隆样本只用来生成音色，生成后本机不留副本。</div>
+        <div class="grp">
+          <div class="gtitle">音色列表</div>
+          <div class="voice"><div style="flex:1;"><div class="vn">claire · 柔和</div><div class="vd">默认 · 女声 · 平缓，适合长句</div></div><span class="tick" style="color:var(--accent);display:flex;"><svg class="ic"><use href="#i-check"/></svg></span><div class="play"><svg class="ic" style="width:14px;height:14px"><use href="#i-phone"/></svg></div></div>
+          <div class="voice"><div style="flex:1;"><div class="vn">alex · 沉稳</div><div class="vd">默认 · 男声 · 偏低，句尾稳</div></div><div class="play"><svg class="ic" style="width:14px;height:14px"><use href="#i-phone"/></svg></div></div>
+        </div>
+        <div class="grp">
+          <div class="gtitle">克隆音色 · 云端</div>
+          <div class="row" style="border-bottom:none;"><span class="rk" style="color:var(--ink3);font-size:13.5px;">还没有克隆音色</span></div>
+          <div class="note">「设为默认」会同时替换朗读音色；仍然只有一个声音。</div>
+        </div>
+      </div>
+      <div class="footbar"><div class="btnsolid">开始录制</div><div class="btnline">选择文件</div></div>
+    </div>
+    <div class="cap">声音克隆 · 亮色</div>
+  </div>
+  <div class="cell">
+    <div class="phone dark">
+      <div class="topbar" style="height:56px;"><div class="back"><svg class="ic"><use href="#i-back"/></svg></div><div class="ttl" style="font-size:20px;line-height:28px;">声音克隆</div></div>
+      <div style="height:1px;background:var(--line);"></div>
+      <div class="sub">
+        <div class="note">一男一女两个默认音色；克隆样本只用来生成音色，生成后本机不留副本。</div>
+        <div class="grp">
+          <div class="gtitle">音色列表</div>
+          <div class="voice"><div style="flex:1;"><div class="vn">claire · 柔和</div><div class="vd">默认 · 女声 · 平缓，适合长句</div></div><span class="tick" style="color:var(--accent);display:flex;"><svg class="ic"><use href="#i-check"/></svg></span><div class="play"><svg class="ic" style="width:14px;height:14px"><use href="#i-phone"/></svg></div></div>
+          <div class="voice"><div style="flex:1;"><div class="vn">alex · 沉稳</div><div class="vd">默认 · 男声 · 偏低，句尾稳</div></div><div class="play"><svg class="ic" style="width:14px;height:14px"><use href="#i-phone"/></svg></div></div>
+        </div>
+        <div class="grp">
+          <div class="gtitle">克隆音色 · 云端</div>
+          <div class="row" style="border-bottom:none;"><span class="rk" style="color:var(--ink3);font-size:13.5px;">还没有克隆音色</span></div>
+          <div class="note">「设为默认」会同时替换朗读音色；仍然只有一个声音。</div>
+        </div>
+      </div>
+      <div class="footbar"><div class="btnsolid">开始录制</div><div class="btnline">选择文件</div></div>
+    </div>
+    <div class="cap">声音克隆 · 暗色</div>
+  </div>
+</div>
+
+<h2 class="page" style="margin-top:64px;">18 · 陪伴与回忆<span class="sub">四个入口一列排开，不加描述行</span></h2>
+<div class="grid">
+  <div class="cell">
+    <div class="phone light">
+      <div class="topbar" style="height:56px;"><div class="back"><svg class="ic"><use href="#i-back"/></svg></div><div class="ttl" style="font-size:20px;line-height:28px;">陪伴与回忆</div></div>
+      <div style="height:1px;background:var(--line);"></div>
+      <div class="sub">
+        <div style="display:flex;align-items:center;gap:14px;">
+          <div style="width:48px;height:48px;border-radius:50%;background:var(--surface2);"></div>
+          <div style="font-size:16px;font-weight:600;">小鱼</div>
+        </div>
+        <div class="grp">
+          <div class="card" style="padding:0 16px;">
+            <div class="row"><span class="ric"><svg class="ic"><use href="#i-heart"/></svg></span><span class="rk">关系</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+            <div class="row"><span class="ric"><svg class="ic"><use href="#i-bookmark"/></svg></span><span class="rk">记忆</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+            <div class="row"><span class="ric"><svg class="ic"><use href="#i-bell"/></svg></span><span class="rk">做梦</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+            <div class="row" style="border-bottom:none;"><span class="ric"><svg class="ic"><use href="#i-phone"/></svg></span><span class="rk">通话记录</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">陪伴与回忆 · 亮色</div>
+  </div>
+  <div class="cell">
+    <div class="phone dark">
+      <div class="topbar" style="height:56px;"><div class="back"><svg class="ic"><use href="#i-back"/></svg></div><div class="ttl" style="font-size:20px;line-height:28px;">陪伴与回忆</div></div>
+      <div style="height:1px;background:var(--line);"></div>
+      <div class="sub">
+        <div style="display:flex;align-items:center;gap:14px;">
+          <div style="width:48px;height:48px;border-radius:50%;background:var(--surface2);"></div>
+          <div style="font-size:16px;font-weight:600;">小鱼</div>
+        </div>
+        <div class="grp">
+          <div class="card" style="padding:0 16px;">
+            <div class="row"><span class="ric"><svg class="ic"><use href="#i-heart"/></svg></span><span class="rk">关系</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+            <div class="row"><span class="ric"><svg class="ic"><use href="#i-bookmark"/></svg></span><span class="rk">记忆</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+            <div class="row"><span class="ric"><svg class="ic"><use href="#i-bell"/></svg></span><span class="rk">做梦</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+            <div class="row" style="border-bottom:none;"><span class="ric"><svg class="ic"><use href="#i-phone"/></svg></span><span class="rk">通话记录</span><span class="chev"><svg class="ic"><use href="#i-chev"/></svg></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">陪伴与回忆 · 暗色</div>
+  </div>
+</div>
+
+<h2 class="page" style="margin-top:64px;">19 · 关系档案<span class="sub">三个统计并排，经历用灰底标签，不用彩色</span></h2>
+<div class="grid">
+  <div class="cell">
+    <div class="phone light">
+      <div class="topbar" style="height:56px;"><div class="back"><svg class="ic"><use href="#i-back"/></svg></div><div class="ttl" style="font-size:20px;line-height:28px;">关系档案</div></div>
+      <div style="height:1px;background:var(--line);"></div>
+      <div class="sub">
+        <div class="pcard">
+          <div class="bigav"></div>
+          <div style="flex:1;"><div style="font-size:16px;line-height:24px;font-weight:600;">小鱼</div><div class="ptag" style="color:var(--accent);">在一起 3 天</div><div class="ptag">她现在 · 平静</div></div>
+        </div>
+        <div class="statline">
+          <div class="s"><div class="v">42</div><div class="k">次说话</div></div>
+          <div class="s"><div class="v">8</div><div class="k">次通话</div></div>
+          <div class="s"><div class="v">6</div><div class="k">共同经历</div></div>
+        </div>
+        <div class="grp">
+          <div class="gtitle">共同经历</div>
+          <div class="chiprow"><div>第一次通话</div><div>雨夜散步</div><div>那本书</div><div>团子</div><div>贵阳的秋天</div></div>
+        </div>
+        <div class="grp">
+          <div class="gtitle">未完成的话题</div>
+          <div class="tlcard"><div class="tlt">你说的那家面馆</div>下次想带你去，还没问到几点打烊。</div>
+        </div>
+        <div class="grp">
+          <div class="gtitle">习惯打卡</div>
+          <div class="row"><span class="rk">早起</span><span class="rv">连续 12 天</span></div>
+          <div class="row" style="border-bottom:none;"><span class="rk">睡前聊两句</span><span class="rv">连续 5 天</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">关系档案 · 亮色</div>
+  </div>
+  <div class="cell">
+    <div class="phone dark">
+      <div class="topbar" style="height:56px;"><div class="back"><svg class="ic"><use href="#i-back"/></svg></div><div class="ttl" style="font-size:20px;line-height:28px;">关系档案</div></div>
+      <div style="height:1px;background:var(--line);"></div>
+      <div class="sub">
+        <div class="pcard">
+          <div class="bigav"></div>
+          <div style="flex:1;"><div style="font-size:16px;line-height:24px;font-weight:600;">小鱼</div><div class="ptag" style="color:var(--accent);">在一起 3 天</div><div class="ptag">她现在 · 平静</div></div>
+        </div>
+        <div class="statline">
+          <div class="s"><div class="v">42</div><div class="k">次说话</div></div>
+          <div class="s"><div class="v">8</div><div class="k">次通话</div></div>
+          <div class="s"><div class="v">6</div><div class="k">共同经历</div></div>
+        </div>
+        <div class="grp">
+          <div class="gtitle">共同经历</div>
+          <div class="chiprow"><div>第一次通话</div><div>雨夜散步</div><div>那本书</div><div>团子</div><div>贵阳的秋天</div></div>
+        </div>
+        <div class="grp">
+          <div class="gtitle">未完成的话题</div>
+          <div class="tlcard"><div class="tlt">你说的那家面馆</div>下次想带你去，还没问到几点打烊。</div>
+        </div>
+        <div class="grp">
+          <div class="gtitle">习惯打卡</div>
+          <div class="row"><span class="rk">早起</span><span class="rv">连续 12 天</span></div>
+          <div class="row" style="border-bottom:none;"><span class="rk">睡前聊两句</span><span class="rv">连续 5 天</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">关系档案 · 暗色</div>
+  </div>
+</div>
+
+<h2 class="page" style="margin-top:64px;">20 · 记忆<span class="sub">纵向时间轴，左侧细线，只有最新一条是紫点</span></h2>
+<div class="grid">
+  <div class="cell">
+    <div class="phone light">
+      <div class="topbar" style="height:56px;"><div class="back"><svg class="ic"><use href="#i-back"/></svg></div><div class="ttl" style="font-size:20px;line-height:28px;">记忆</div><div class="right" style="gap:18px;color:var(--ink);"><svg class="ic"><use href="#i-search"/></svg></div></div>
+      <div style="height:1px;background:var(--line);"></div>
+      <div class="sub" style="gap:0;">
+        <div class="note" style="padding:12px 0 4px;color:var(--ink3);">已建立语义索引 · 共 18 条</div>
+        <div class="tl" style="margin-top:14px;">
+          <div class="gtitle" style="padding:0 0 10px 0;">11 月</div>
+          <div class="tlnode">
+            <div class="tlrail"><div class="tldot on"></div><div class="tlline"></div></div>
+            <div class="tlbody"><div class="tltime">11 月 26 日 · 今晚</div><div class="tlcard"><div class="tlt">你说的那家面馆</div>在喷水池后面，晚上十点还开着。</div></div>
+          </div>
+          <div class="tlnode">
+            <div class="tlrail"><div class="tldot"></div><div class="tlline"></div></div>
+            <div class="tlbody"><div class="tltime">11 月 25 日 · 夜里</div><div class="tlcard"><div class="tlt">她记下的梦</div>梦见一条一直下坡的路，尽头是海。</div></div>
+          </div>
+          <div class="tlnode">
+            <div class="tlrail"><div class="tldot"></div><div class="tlline"></div></div>
+            <div class="tlbody"><div class="tltime">11 月 24 日</div><div class="tlcard"><div class="tlt">团子</div>你说它最近总在窗台上睡，压坏了那盆薄荷。</div></div>
+          </div>
+          <div class="tlnode">
+            <div class="tlrail"><div class="tldot"></div></div>
+            <div class="tlbody"><div class="tltime">11 月 20 日</div><div class="tlcard"><div class="tlt">一件还说不清的小事</div>那天你只说了半句，她留着没追问。</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">记忆 · 亮色</div>
+  </div>
+  <div class="cell">
+    <div class="phone dark">
+      <div class="topbar" style="height:56px;"><div class="back"><svg class="ic"><use href="#i-back"/></svg></div><div class="ttl" style="font-size:20px;line-height:28px;">记忆</div><div class="right" style="gap:18px;color:var(--ink);"><svg class="ic"><use href="#i-search"/></svg></div></div>
+      <div style="height:1px;background:var(--line);"></div>
+      <div class="sub" style="gap:0;">
+        <div class="note" style="padding:12px 0 4px;color:var(--ink3);">已建立语义索引 · 共 18 条</div>
+        <div class="tl" style="margin-top:14px;">
+          <div class="gtitle" style="padding:0 0 10px 0;">11 月</div>
+          <div class="tlnode">
+            <div class="tlrail"><div class="tldot on"></div><div class="tlline"></div></div>
+            <div class="tlbody"><div class="tltime">11 月 26 日 · 今晚</div><div class="tlcard"><div class="tlt">你说的那家面馆</div>在喷水池后面，晚上十点还开着。</div></div>
+          </div>
+          <div class="tlnode">
+            <div class="tlrail"><div class="tldot"></div><div class="tlline"></div></div>
+            <div class="tlbody"><div class="tltime">11 月 25 日 · 夜里</div><div class="tlcard"><div class="tlt">她记下的梦</div>梦见一条一直下坡的路，尽头是海。</div></div>
+          </div>
+          <div class="tlnode">
+            <div class="tlrail"><div class="tldot"></div><div class="tlline"></div></div>
+            <div class="tlbody"><div class="tltime">11 月 24 日</div><div class="tlcard"><div class="tlt">团子</div>你说它最近总在窗台上睡，压坏了那盆薄荷。</div></div>
+          </div>
+          <div class="tlnode">
+            <div class="tlrail"><div class="tldot"></div></div>
+            <div class="tlbody"><div class="tltime">11 月 20 日</div><div class="tlcard"><div class="tlt">一件还说不清的小事</div>那天你只说了半句，她留着没追问。</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">记忆 · 暗色</div>
+  </div>
+</div>
+
+<h2 class="page" style="margin-top:64px;">21 · 做梦<span class="sub">全屏留白，只有一个月亮光晕，其余靠字</span></h2>
+<div class="grid">
+  <div class="cell">
+    <div class="phone light">
+      <div class="topbar" style="height:56px;"><div class="back"><svg class="ic"><use href="#i-back"/></svg></div><div class="ttl" style="font-size:20px;line-height:28px;">做梦</div></div>
+      <div class="night">
+        <div class="moon"></div>
+        <div class="ntitle">夜里整理了几件事</div>
+        <div class="nsub">11 月 26 日 · 凌晨 3:20</div>
+        <div class="ncard">她把今天的事摊在被子上，一件一件看。面馆那句你只说了半句，她替你想了另一半。</div>
+        <div class="ncard" style="font-size:12.5px;color:var(--ink3);">梦里的东西会留在记忆里，但不会主动提起。</div>
+      </div>
+      <div class="savebar"><span class="dirty">夜间整理 · 每天 3:00 之后</span><div class="btn">设置</div></div>
+    </div>
+    <div class="cap">做梦 · 亮色</div>
+  </div>
+  <div class="cell">
+    <div class="phone dark">
+      <div class="topbar" style="height:56px;"><div class="back"><svg class="ic"><use href="#i-back"/></svg></div><div class="ttl" style="font-size:20px;line-height:28px;">做梦</div></div>
+      <div class="night darkbg">
+        <div class="moon"></div>
+        <div class="ntitle">夜里整理了几件事</div>
+        <div class="nsub">11 月 26 日 · 凌晨 3:20</div>
+        <div class="ncard" style="background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.14);">她把今天的事摊在被子上，一件一件看。面馆那句你只说了半句，她替你想了另一半。</div>
+        <div class="ncard" style="font-size:12.5px;background:transparent;border-color:rgba(255,255,255,.14);color:rgba(245,245,245,.55);">梦里的东西会留在记忆里，但不会主动提起。</div>
+      </div>
+      <div class="savebar"><span class="dirty">夜间整理 · 每天 3:00 之后</span><div class="btn">设置</div></div>
+    </div>
+    <div class="cap">做梦 · 暗色</div>
+  </div>
+</div>
+
+<h2 class="page" style="margin-top:64px;">22 · 通话记录<span class="sub">一行一次，时长右对齐</span></h2>
+<div class="grid">
+  <div class="cell">
+    <div class="phone light">
+      <div class="topbar" style="height:56px;"><div class="back"><svg class="ic"><use href="#i-back"/></svg></div><div class="ttl" style="font-size:20px;line-height:28px;">通话记录</div></div>
+      <div style="height:1px;background:var(--line);"></div>
+      <div class="sub" style="gap:0;">
+        <div class="clog"><div class="cav"></div><div><div class="cn">小鱼</div><div class="cd">语音通话 · 3 分 12 秒</div></div><div class="ct">今天 21:40</div></div>
+        <div class="clog"><div class="cav"></div><div><div class="cn">小鱼</div><div class="cd">未接来电</div></div><div class="ct">昨天 23:10</div></div>
+        <div class="clog"><div class="cav"></div><div><div class="cn">小鱼</div><div class="cd">语音通话 · 12 分 04 秒</div></div><div class="ct">11-24 20:02</div></div>
+        <div class="clog"><div class="cav"></div><div><div class="cn">时雨</div><div class="cd">语音通话 · 1 分 31 秒</div></div><div class="ct">11-23 19:15</div></div>
+        <div class="clog" style="border-bottom:none;"><div class="cav"></div><div><div class="cn">小鱼</div><div class="cd">语音通话 · 48 秒</div></div><div class="ct">11-22 22:31</div></div>
+      </div>
+    </div>
+    <div class="cap">通话记录 · 亮色</div>
+  </div>
+  <div class="cell">
+    <div class="phone dark">
+      <div class="topbar" style="height:56px;"><div class="back"><svg class="ic"><use href="#i-back"/></svg></div><div class="ttl" style="font-size:20px;line-height:28px;">通话记录</div></div>
+      <div style="height:1px;background:var(--line);"></div>
+      <div class="sub" style="gap:0;">
+        <div class="clog"><div class="cav"></div><div><div class="cn">小鱼</div><div class="cd">语音通话 · 3 分 12 秒</div></div><div class="ct">今天 21:40</div></div>
+        <div class="clog"><div class="cav"></div><div><div class="cn">小鱼</div><div class="cd">未接来电</div></div><div class="ct">昨天 23:10</div></div>
+        <div class="clog"><div class="cav"></div><div><div class="cn">小鱼</div><div class="cd">语音通话 · 12 分 04 秒</div></div><div class="ct">11-24 20:02</div></div>
+        <div class="clog"><div class="cav"></div><div><div class="cn">时雨</div><div class="cd">语音通话 · 1 分 31 秒</div></div><div class="ct">11-23 19:15</div></div>
+        <div class="clog" style="border-bottom:none;"><div class="cav"></div><div><div class="cn">小鱼</div><div class="cd">语音通话 · 48 秒</div></div><div class="ct">11-22 22:31</div></div>
+      </div>
+    </div>
+    <div class="cap">通话记录 · 暗色</div>
+  </div>
+</div>
+
+<h2 class="page" style="margin-top:64px;">23 · 通话<span class="sub">整屏铺底，不套卡片；一个脉冲环、三个圆钮</span></h2>
+<div class="grid">
+  <div class="cell">
+    <div class="phone light">
+      <div class="callwrap">
+        <div class="callhead">
+          <div class="cav"></div>
+          <div><div class="callname">小鱼</div><div class="callsub">通话中 00:32</div></div>
+          <div class="callacts"><svg class="ic"><use href="#i-chevdown"/></svg><svg class="ic"><use href="#i-comment"/></svg></div>
+        </div>
+        <div class="stage">
+          <div class="bigring"><div class="in"></div></div>
+          <div class="stagename">小鱼</div>
+          <div class="stagesub">正在听你说</div>
+        </div>
+        <div class="caption">嗯，我在听。你刚才说到哪儿了？</div>
+        <div class="callbtns">
+          <div class="cbtnwrap"><div class="cbtn"><svg class="ic" style="width:22px;height:22px"><use href="#i-mic"/></svg></div><div class="t">静音</div></div>
+          <div class="cbtnwrap"><div class="cbtn red"><svg class="ic" style="width:22px;height:22px"><use href="#i-phone"/></svg></div><div class="t">挂断</div></div>
+          <div class="cbtnwrap"><div class="cbtn"><svg class="ic" style="width:22px;height:22px"><use href="#i-speaker"/></svg></div><div class="t">免提</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">通话 · 亮色</div>
+  </div>
+  <div class="cell">
+    <div class="phone dark">
+      <div class="callwrap dk">
+        <div class="callhead">
+          <div class="cav"></div>
+          <div><div class="callname">小鱼</div><div class="callsub">通话中 00:32</div></div>
+          <div class="callacts"><svg class="ic"><use href="#i-chevdown"/></svg><svg class="ic"><use href="#i-comment"/></svg></div>
+        </div>
+        <div class="stage">
+          <div class="bigring"><div class="in"></div></div>
+          <div class="stagename">小鱼</div>
+          <div class="stagesub">正在听你说</div>
+        </div>
+        <div class="caption">嗯，我在听。你刚才说到哪儿了？</div>
+        <div class="callbtns">
+          <div class="cbtnwrap"><div class="cbtn"><svg class="ic" style="width:22px;height:22px"><use href="#i-mic"/></svg></div><div class="t">静音</div></div>
+          <div class="cbtnwrap"><div class="cbtn red"><svg class="ic" style="width:22px;height:22px"><use href="#i-phone"/></svg></div><div class="t">挂断</div></div>
+          <div class="cbtnwrap"><div class="cbtn"><svg class="ic" style="width:22px;height:22px"><use href="#i-speaker"/></svg></div><div class="t">免提</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">通话 · 暗色</div>
+  </div>
+</div>
+
+<h2 class="page" style="margin-top:64px;">24 · 通话详情<span class="sub">弹窗不算页面，但也要有同一套圆角和按钮</span></h2>
+<div class="grid">
+  <div class="cell">
+    <div class="phone light">
+      <div class="chat-head">
+        <div class="avatar"></div>
+        <div class="chat-name">小鱼</div>
+        <div class="head-btn" style="gap:22px;align-items:center;"><svg class="ic"><use href="#i-phone"/></svg><svg class="ic"><use href="#i-more"/></svg></div>
+      </div>
+      <div class="thread">
+        <div class="msg her">你回来啦。今天路上冷不冷？</div>
+        <div class="msg me">有点，风比昨天大。</div>
+        <div class="sys"><svg class="ic"><use href="#i-phone"/></svg><span>通话 3 分 12 秒</span></div>
+      </div>
+      <div class="dlgmask">
+        <div class="dlg">
+          <div class="dt">语音通话</div>
+          <div class="dd">3 分 12 秒 · 今天 21:40</div>
+          <div style="margin-top:16px;display:flex;align-items:center;gap:12px;">
+            <div style="width:34px;height:34px;border-radius:50%;background:#6E4D8F;color:#fff;display:flex;align-items:center;justify-content:center;"><svg class="ic" style="width:14px;height:14px"><use href="#i-chev"/></svg></div>
+            <div style="flex:1;height:3px;background:#EAE7EE;border-radius:2px;position:relative;"><div style="position:absolute;left:0;top:0;height:3px;width:38%;background:#6E4D8F;border-radius:2px;"></div></div>
+            <div style="font-size:11.5px;color:#8A858F;">1:12</div>
+          </div>
+          <div class="dlgacts"><div class="a">关闭</div><div class="a pri">播放录音</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">通话详情 · 亮色</div>
+  </div>
+  <div class="cell">
+    <div class="phone dark">
+      <div class="chat-head">
+        <div class="avatar"></div>
+        <div class="chat-name">小鱼</div>
+        <div class="head-btn" style="gap:22px;align-items:center;"><svg class="ic"><use href="#i-phone"/></svg><svg class="ic"><use href="#i-more"/></svg></div>
+      </div>
+      <div class="thread">
+        <div class="msg her">你回来啦。今天路上冷不冷？</div>
+        <div class="msg me">有点，风比昨天大。</div>
+        <div class="sys"><svg class="ic"><use href="#i-phone"/></svg><span>通话 3 分 12 秒</span></div>
+      </div>
+      <div class="dlgmask">
+        <div class="dlg dk">
+          <div class="dt">语音通话</div>
+          <div class="dd">3 分 12 秒 · 今天 21:40</div>
+          <div style="margin-top:16px;display:flex;align-items:center;gap:12px;">
+            <div style="width:34px;height:34px;border-radius:50%;background:#C7A6E3;color:#1A0E24;display:flex;align-items:center;justify-content:center;"><svg class="ic" style="width:14px;height:14px"><use href="#i-chev"/></svg></div>
+            <div style="flex:1;height:3px;background:#2A2630;border-radius:2px;position:relative;"><div style="position:absolute;left:0;top:0;height:3px;width:38%;background:#C7A6E3;border-radius:2px;"></div></div>
+            <div style="font-size:11.5px;color:#8A858F;">1:12</div>
+          </div>
+          <div class="dlgacts"><div class="a" style="background:#2A2630;color:#E4DFEA;">关闭</div><div class="a pri" style="background:#C7A6E3;color:#1A0E24;">播放录音</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">通话详情 · 暗色</div>
+  </div>
+</div>
+
+<h2 class="page" style="margin-top:64px;">25 · 表情库<span class="sub">四列方格，虚线格是添加位</span></h2>
+<div class="grid">
+  <div class="cell">
+    <div class="phone light">
+      <div class="topbar" style="height:56px;"><div class="back"><svg class="ic"><use href="#i-back"/></svg></div><div class="ttl" style="font-size:20px;line-height:28px;">表情管理</div><div class="right"><span style="font-size:14px;color:var(--ink);">添加</span></div></div>
+      <div style="height:1px;background:var(--line);"></div>
+      <div class="sub">
+        <div class="note">点表情可改标签或删除；删除只影响本机表情库，不涉及聊天记录。</div>
+        <div class="stickgrid">
+          <div class="s"></div><div class="s"></div><div class="s"></div><div class="s"></div>
+          <div class="s"></div><div class="s"></div><div class="s"></div><div class="s"></div>
+          <div class="s"></div><div class="s"></div><div class="s"></div><div class="add"><svg class="ic" style="width:20px;height:20px"><use href="#i-plus"/></svg></div>
+        </div>
+      </div>
+      <div class="footbar"><div class="btnsolid">完成</div><div class="btnline">相册</div><div class="btnline">拍照</div></div>
+    </div>
+    <div class="cap">表情库 · 亮色</div>
+  </div>
+  <div class="cell">
+    <div class="phone dark">
+      <div class="topbar" style="height:56px;"><div class="back"><svg class="ic"><use href="#i-back"/></svg></div><div class="ttl" style="font-size:20px;line-height:28px;">表情管理</div><div class="right"><span style="font-size:14px;color:var(--ink);">添加</span></div></div>
+      <div style="height:1px;background:var(--line);"></div>
+      <div class="sub">
+        <div class="note">点表情可改标签或删除；删除只影响本机表情库，不涉及聊天记录。</div>
+        <div class="stickgrid">
+          <div class="s"></div><div class="s"></div><div class="s"></div><div class="s"></div>
+          <div class="s"></div><div class="s"></div><div class="s"></div><div class="s"></div>
+          <div class="s"></div><div class="s"></div><div class="s"></div><div class="add"><svg class="ic" style="width:20px;height:20px"><use href="#i-plus"/></svg></div>
+        </div>
+      </div>
+      <div class="footbar"><div class="btnsolid">完成</div><div class="btnline">相册</div><div class="btnline">拍照</div></div>
+    </div>
+    <div class="cap">表情库 · 暗色</div>
+  </div>
+</div>
+
+<h2 class="page" style="margin-top:64px;">26 · 看图<span class="sub">整屏黑底，只有关闭和保存两个动作</span></h2>
+<div class="grid">
+  <div class="cell">
+    <div class="phone light" style="background:#0A0A0A;">
+      <div style="height:56px;display:flex;align-items:center;padding:0 16px;color:#F5F5F5;">
+        <svg class="ic" style="width:22px;height:22px"><use href="#i-back"/></svg>
+        <div style="margin-left:auto;font-size:14px;">保存到相册</div>
+      </div>
+      <div style="flex:1;display:flex;align-items:center;justify-content:center;padding:0 0;">
+        <div style="width:100%;height:420px;background:#1A1A1A;"></div>
+      </div>
+      <div style="padding:16px 16px 26px;text-align:center;font-size:12px;color:rgba(245,245,245,.45);">长按可保存 · 图片只存在这台手机上</div>
+    </div>
+    <div class="cap">看图 · 亮色</div>
+  </div>
+  <div class="cell">
+    <div class="phone dark" style="background:#0A0A0A;">
+      <div style="height:56px;display:flex;align-items:center;padding:0 16px;color:#F5F5F5;">
+        <svg class="ic" style="width:22px;height:22px"><use href="#i-back"/></svg>
+        <div style="margin-left:auto;font-size:14px;">保存到相册</div>
+      </div>
+      <div style="flex:1;display:flex;align-items:center;justify-content:center;padding:0 0;">
+        <div style="width:100%;height:420px;background:#1A1A1A;"></div>
+      </div>
+      <div style="padding:16px 16px 26px;text-align:center;font-size:12px;color:rgba(245,245,245,.45);">长按可保存 · 图片只存在这台手机上</div>
+    </div>
+    <div class="cap">看图 · 暗色</div>
+  </div>
+</div>
+
+<h2 class="page" style="margin-top:64px;">27 · 输入托盘<span class="sub">表情六列、两个动作、一条按住说话</span></h2>
+<div class="grid">
+  <div class="cell">
+    <div class="phone light">
+      <div class="chat-head">
+        <div class="avatar"></div>
+        <div class="chat-name">小鱼</div>
+        <div class="head-btn" style="gap:22px;align-items:center;"><svg class="ic"><use href="#i-phone"/></svg><svg class="ic"><use href="#i-more"/></svg></div>
+      </div>
+      <div class="thread" style="flex:1;">
+        <div class="msg her">你回来啦。今天路上冷不冷？</div>
+        <div class="msg me">有点，风比昨天大。</div>
+      </div>
+      <div class="tray">
+        <div class="traygrid">
+          <div class="s"></div><div class="s"></div><div class="s"></div><div class="s"></div><div class="s"></div><div class="s"></div>
+          <div class="s"></div><div class="s"></div><div class="s"></div><div class="s"></div><div class="s"></div><div class="s"></div>
+        </div>
+        <div class="trayacts">
+          <div class="a"><svg class="ic" style="width:17px;height:17px"><use href="#i-image"/></svg>拍摄与相册</div>
+          <div class="a"><svg class="ic" style="width:17px;height:17px"><use href="#i-plus"/></svg>添加表情</div>
+        </div>
+        <div class="holdbar">按住说话</div>
+      </div>
+    </div>
+    <div class="cap">输入托盘 · 亮色</div>
+  </div>
+  <div class="cell">
+    <div class="phone dark">
+      <div class="chat-head">
+        <div class="avatar"></div>
+        <div class="chat-name">小鱼</div>
+        <div class="head-btn" style="gap:22px;align-items:center;"><svg class="ic"><use href="#i-phone"/></svg><svg class="ic"><use href="#i-more"/></svg></div>
+      </div>
+      <div class="thread" style="flex:1;">
+        <div class="msg her">你回来啦。今天路上冷不冷？</div>
+        <div class="msg me">有点，风比昨天大。</div>
+      </div>
+      <div class="tray">
+        <div class="traygrid">
+          <div class="s"></div><div class="s"></div><div class="s"></div><div class="s"></div><div class="s"></div><div class="s"></div>
+          <div class="s"></div><div class="s"></div><div class="s"></div><div class="s"></div><div class="s"></div><div class="s"></div>
+        </div>
+        <div class="trayacts">
+          <div class="a"><svg class="ic" style="width:17px;height:17px"><use href="#i-image"/></svg>拍摄与相册</div>
+          <div class="a"><svg class="ic" style="width:17px;height:17px"><use href="#i-plus"/></svg>添加表情</div>
+        </div>
+        <div class="holdbar">按住说话</div>
+      </div>
+    </div>
+    <div class="cap">输入托盘 · 暗色</div>
+  </div>
+</div>
+
+<h2 class="page" style="margin-top:64px;">28 · 收藏<span class="sub">左侧缩略图、右侧两行，不再卡片化</span></h2>
+<div class="grid">
+  <div class="cell">
+    <div class="phone light">
+      <div class="topbar" style="height:56px;"><div class="back"><svg class="ic"><use href="#i-back"/></svg></div><div class="ttl" style="font-size:20px;line-height:28px;">收藏</div></div>
+      <div style="height:1px;background:var(--line);"></div>
+      <div class="sub" style="gap:0;">
+        <div class="note" style="padding:12px 0;">只存在这台手机上，也不会通知对方。</div>
+        <div class="savedrow"><div class="thumb2"></div><div style="flex:1;"><div class="nm">小鱼 · 11-26</div><div class="tx">收拾到抽屉最底下翻出那张旧票根，纸边已经软了。</div></div></div>
+        <div class="savedrow"><div class="thumb2"></div><div style="flex:1;"><div class="nm">小鱼 · 11-25</div><div class="tx">今天雨小了一点，楼下的桂花落了一地。</div></div></div>
+        <div class="savedrow" style="border-bottom:none;"><div class="thumb2"></div><div style="flex:1;"><div class="nm">小鱼 · 11-22</div><div class="tx">她写的那句「关于你的事，我留得很仔细」。</div></div></div>
+      </div>
+    </div>
+    <div class="cap">收藏 · 亮色</div>
+  </div>
+  <div class="cell">
+    <div class="phone dark">
+      <div class="topbar" style="height:56px;"><div class="back"><svg class="ic"><use href="#i-back"/></svg></div><div class="ttl" style="font-size:20px;line-height:28px;">收藏</div></div>
+      <div style="height:1px;background:var(--line);"></div>
+      <div class="sub" style="gap:0;">
+        <div class="note" style="padding:12px 0;">只存在这台手机上，也不会通知对方。</div>
+        <div class="savedrow"><div class="thumb2"></div><div style="flex:1;"><div class="nm">小鱼 · 11-26</div><div class="tx">收拾到抽屉最底下翻出那张旧票根，纸边已经软了。</div></div></div>
+        <div class="savedrow"><div class="thumb2"></div><div style="flex:1;"><div class="nm">小鱼 · 11-25</div><div class="tx">今天雨小了一点，楼下的桂花落了一地。</div></div></div>
+        <div class="savedrow" style="border-bottom:none;"><div class="thumb2"></div><div style="flex:1;"><div class="nm">小鱼 · 11-22</div><div class="tx">她写的那句「关于你的事，我留得很仔细」。</div></div></div>
+      </div>
+    </div>
+    <div class="cap">收藏 · 暗色</div>
+  </div>
+</div>
+
+</body>
+</html>

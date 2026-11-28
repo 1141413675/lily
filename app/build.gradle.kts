@@ -34,10 +34,10 @@ val bundleSkills = tasks.register<BundleSkillsTask>("bundleSkillAssets") {
 }
 
 android {
-    namespace = "dev.xiaoman.app"
+    namespace = "dev.lily.app"
     compileSdk = 35
     defaultConfig {
-        applicationId = "dev.xiaoman.app"
+        applicationId = "dev.lily.app"
         minSdk = 30
         targetSdk = 35
         versionCode = 1

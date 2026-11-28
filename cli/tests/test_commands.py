@@ -14,8 +14,8 @@ from xiaoman_cli.adb import Adb, broadcast_command  # noqa: E402
 from xiaoman_cli.main import build_parser, main, new_run_id  # noqa: E402
 
 FIXTURE = os.path.join(HERE, "fixtures", "skills", "ride-home")
-SKILLS = "/sdcard/Android/data/dev.xiaoman.app/files/skills"
-RECEIVER = "dev.xiaoman.app/.debug.DebugReceiver"
+SKILLS = "/sdcard/Android/data/dev.lily.app/files/skills"
+RECEIVER = "dev.lily.app/.debug.DebugReceiver"
 
 
 class Result:
@@ -81,8 +81,8 @@ def remote_words(argv):
 class BroadcastTest(unittest.TestCase):
     def test_quoting_roundtrip(self):
         goal = "打开 设置 里的 \"WLAN\"; rm -rf / $(x) 'q'"
-        cmd = broadcast_command("dev.xiaoman.debug.RUN", [("goal", goal), ("skill", None), ("run_id", "r1")])
-        self.assertEqual(shlex.split(cmd), ["am", "broadcast", "-n", RECEIVER, "-a", "dev.xiaoman.debug.RUN",
+        cmd = broadcast_command("dev.lily.debug.RUN", [("goal", goal), ("skill", None), ("run_id", "r1")])
+        self.assertEqual(shlex.split(cmd), ["am", "broadcast", "-n", RECEIVER, "-a", "dev.lily.debug.RUN",
                                             "--es", "goal", goal, "--es", "run_id", "r1"])
 
     def test_run_id(self):
@@ -100,7 +100,7 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(argv[:4], ["adb", "-s", "emu1", "shell"])
         self.assertEqual(len(argv), 5)
         self.assertEqual(remote_words(argv), [
-            "am", "broadcast", "-n", RECEIVER, "-a", "dev.xiaoman.debug.RUN",
+            "am", "broadcast", "-n", RECEIVER, "-a", "dev.lily.debug.RUN",
             "--es", "goal", "打开 设置", "--es", "skill", "open-settings-wifi", "--es", "run_id", "r1"])
         self.assertIn("started run r1", out)
 
@@ -166,7 +166,7 @@ class CommandTest(unittest.TestCase):
         fake = FakeAdb()
         self.assertEqual(fake.run_main(["stop"])[0], 0)
         self.assertEqual(remote_words(fake.calls[0][1]),
-                         ["am", "broadcast", "-n", RECEIVER, "-a", "dev.xiaoman.debug.STOP"])
+                         ["am", "broadcast", "-n", RECEIVER, "-a", "dev.lily.debug.STOP"])
 
     def test_broadcast_error_output(self):
         fake = FakeAdb(results={"STOP": Result(0, "Error: Bad component name")})
@@ -215,7 +215,7 @@ class PushTest(unittest.TestCase):
                                    SKILLS + "/ride-home/SKILL.md"])
         self.assertEqual(runs[2], ["adb", "-s", "S", "push", os.path.join(FIXTURE, "flow.yaml"),
                                    SKILLS + "/ride-home/flow.yaml"])
-        self.assertEqual(remote_words(runs[3])[-1], "dev.xiaoman.debug.RELOAD_SKILLS")
+        self.assertEqual(remote_words(runs[3])[-1], "dev.lily.debug.RELOAD_SKILLS")
         self.assertEqual(len(runs), 4)
 
     def test_push_refuses_invalid(self):
@@ -248,7 +248,7 @@ class TracesCommandTest(unittest.TestCase):
             code, out, _ = fake.run_main(["traces", "pull", "r1", "--out", out_dir])
             self.assertEqual(code, 0)
             self.assertEqual(fake.calls[0][1], ["adb", "pull",
-                                                "/sdcard/Android/data/dev.xiaoman.app/files/traces/r1", out_dir])
+                                                "/sdcard/Android/data/dev.lily.app/files/traces/r1", out_dir])
             self.assertTrue(os.path.isdir(out_dir))
             self.assertIn(os.path.join(out_dir, "r1"), out)
         finally:

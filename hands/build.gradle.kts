@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "dev.xiaoman.hands"
+    namespace = "dev.lily.hands"
     compileSdk = 35
     defaultConfig {
         minSdk = 30

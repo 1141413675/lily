@@ -1,6 +1,6 @@
 # 接入 MCP：不操作手机也能办事
 
-查天气、规划路线、查车票、叫车、点餐这类事，很多平台已经提供了 MCP 服务。小满可以直接调用这些服务，不用在手机上一步步点。iPhone 用户也能用，因为这条路不需要操作手机屏幕。
+查天气、规划路线、查车票、叫车、点餐这类事，很多平台已经提供了 MCP 服务。Lily可以直接调用这些服务，不用在手机上一步步点。iPhone 用户也能用，因为这条路不需要操作手机屏幕。
 
 聊天模型会同时看到内置工具（记忆、提醒、`phone_task`）和 MCP 工具。MCP 工具名的格式是 `服务器名__工具名`，比如 `amap__maps_weather`。能用 MCP 工具完成的事，模型会优先用工具；剩下只有 App 能做的事，再交给 `phone_task` 操作手机。
 
@@ -49,7 +49,7 @@ ios-runner chat
 
 在底部的「服务」页勾选，Key 保存在加密存储里，保存后下一条消息生效。需要确认的工具会在聊天里提问，回复“确认”才会执行，回复其他内容就取消。
 
-进阶：也可以用 adb 把 `mcp.json` 放到 `/sdcard/Android/data/dev.xiaoman.app/files/mcp.json`，其中的远程 HTTP 服务器会与勾选的服务合并（Key 直接写在文件里，stdio 服务器会被跳过）。
+进阶：也可以用 adb 把 `mcp.json` 放到 `/sdcard/Android/data/dev.lily.app/files/mcp.json`，其中的远程 HTTP 服务器会与勾选的服务合并（Key 直接写在文件里，stdio 服务器会被跳过）。
 
 ## 实现位置
 

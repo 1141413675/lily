@@ -1,6 +1,6 @@
 # 编写技能
 
-一个技能教会小满一个场景（打车、外卖、排今日计划、按记忆出题……）。技能是一个文件夹，包含 `SKILL.md`
+一个技能教会Lily一个场景（打车、外卖、排今日计划、按记忆出题……）。技能是一个文件夹，包含 `SKILL.md`
 和可选的 `flow.yaml`，不需要重新打包 APK。示例见 `skills/examples/`。
 
 ```
@@ -11,9 +11,9 @@ taxi-home/
 
 ## 技能放在哪里
 
-手机上：`/sdcard/Android/data/dev.xiaoman.app/files/skills/<name>/`。App 也会把示例技能作为 assets
+手机上：`/sdcard/Android/data/dev.lily.app/files/skills/<name>/`。App 也会把示例技能作为 assets
 打包；手机目录里同 `name` 的技能会覆盖内置技能。App 启动时会重新加载技能，debug 包也可以通过
-`dev.xiaoman.debug.RELOAD_SKILLS` 广播触发重新加载。
+`dev.lily.debug.RELOAD_SKILLS` 广播触发重新加载。
 
 ## SKILL.md
 
@@ -47,15 +47,15 @@ deeplinks:
 手机技能的 frontmatter 之后是写给操作模型的 Markdown。尽量简短具体：在 App 里怎么走、要给用户读出什么、
 什么时候 `ask_user`（登录、验证码、商品售罄）、什么时候 `finish`。
 
-## 小满内置链接
+## Lily内置链接
 
-有些系统功能有稳定的入口，比一页页点更可靠。小满把下面的链接转成系统调用，技能里像普通深链一样声明和使用：
+有些系统功能有稳定的入口，比一页页点更可靠。Lily把下面的链接转成系统调用，技能里像普通深链一样声明和使用：
 
 | 链接 | 作用 |
 |---|---|
-| `xiaoman://alarm/set?hour=15&minute=0&label=喝水` | 打开系统时钟的「新建闹钟」页，时间和标签已填好；仍需在页面上核对后点保存 |
+| `lily://alarm/set?hour=15&minute=0&label=喝水` | 打开系统时钟的「新建闹钟」页，时间和标签已填好；仍需在页面上核对后点保存 |
 
-hour 为 0–23，minute 为 0–59（缺省 0），label 可选。其他 `xiaoman://` 链接会被拒绝。示例见 `skills/examples/health-alarms`。
+hour 为 0–23，minute 为 0–59（缺省 0），label 可选。其他 `lily://` 链接会被拒绝。示例见 `skills/examples/health-alarms`。
 
 ## 聊天工作流（channel: chat）
 
