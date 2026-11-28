@@ -13,9 +13,9 @@
 | 代码 | `~/Documents/lily`（xiaoman 命名）<br>`outputs/lily-renamed`（lily 命名） | **只有 `~/Documents/lily`** |
 | 包名 | `dev.xiaoman.app` + `dev.lily.app` 两个 | **`dev.lily.app` 一个** |
 | 桌面图标 | 两个都叫 Lily，看不出区别 | **一个** |
-| 分支 | `feat/vendor-presets-tts` | **`feat/lily-unified-ui`**（新增，未提交） |
+| 分支 | `feat/vendor-presets-tts` | **`feat/lily-unified-ui`**（新增，已提交 `59da3f4`） |
 
-**当前分支 `feat/lily-unified-ui` 就是合并后的完整版**（含两个 AI 的全部改动），工作区里有 374 个文件的改动，**尚未提交、未推送**。
+**当前分支 `feat/lily-unified-ui` 就是合并后的完整版**（含两个 AI 的全部改动），提交号 `59da3f4`，379 个文件、+10137/−2624 行，**尚未推送到 origin**。
 
 原有分支 `feat/vendor-presets-tts`（HEAD = `3c2a508`）和 `backup/vendor-tts-snapshot` 都完整保留，没有动过。
 
@@ -143,4 +143,5 @@ adb -s $D shell am broadcast -n dev.lily.app/.debug.DebugReceiver \
 - **不要在 `~/Documents/lily` 之外再开一份代码副本。** 之前出问题就是因为两个 AI 各有一份，改到最后两边分叉、装出两个 App。
 - **不要改回 xiaoman / 小满命名**（品牌字标 `LilyMark`、`app_name`、资源文件 `*_lily.xml` 除外——那些是品牌名，故意保留）。
 - **改动先跑单测再提交。** `:app:testDebugUnitTest` 全绿是最低门槛。
-- 当前 `feat/lily-unified-ui` 分支的 374 个文件改动**尚未提交**。要提交请先确认内容，或让我来提交。
+- **改了 UI 记得重新生成截图基线**：`scripts/gradle.sh --online :app:recordPaparazziDebug`，然后用 `:app:verifyPaparazziDebug` 确认。Paparazzi 的基线文件名带包名（`dev.lily.app.ui_*`），改包名或改配色后基线会失配。
+- `feat/lily-unified-ui` 分支**尚未推送**。推送前建议先确认 `origin/main` 的位置（它比 `feat/vendor-presets-tts` 落后 8 个提交）。
