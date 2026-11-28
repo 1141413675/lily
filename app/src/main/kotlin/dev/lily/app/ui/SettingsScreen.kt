@@ -752,7 +752,7 @@ internal fun DoubaoAsrSection(form: SettingsForm.DoubaoAsrForm, onChange: (Setti
 
 /** 模型页字段：标签单独一行放在输入框上方并留出间距，和输入框边框脱开。 */
 @Composable
-private fun FieldLabel(label: String, content: @Composable () -> Unit) {
+internal fun FieldLabel(label: String, content: @Composable () -> Unit) {
     Column(
         Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(Space.sm),

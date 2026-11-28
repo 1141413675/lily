@@ -138,8 +138,12 @@ data class VoiceSettings(
         /**
          * 豆包实时语音模型 3.0（Seeduplex）全双工端点。
          *
-         * 火山方舟的语音接口都在 `openspeech.bytedance.com` 下，鉴权用 `X-Api-Key`，
-         * 与豆包 TTS/ASR 共用同一个 Key，不需要另外申请。
+         * 豆包语音的接口都在 `openspeech.bytedance.com` 下，鉴权用 `X-Api-Key`，
+         * 与豆包 TTS/ASR 是同一个 Key，不需要另外申请。
+         *
+         * 注意：这个 Key 不能用方舟控制台创建的 `ark-` Key——方舟的 Key 只管方舟内
+         * 的模型与服务。要一把 Key 通吃，得用火山引擎 IAM 控制台创建的 Key，
+         * 并给它绑上豆包语音的权限策略。
          */
         const val DEFAULT_REALTIME_BASE_URL = "wss://openspeech.bytedance.com/api/v3/duplex/realtime/dialogue"
 
@@ -317,6 +321,11 @@ data class AppSettings(
     /** 操作模型同理，按厂商各存一份。 */
     val operatorVendors: Map<ModelVendor, ModelSettings> = emptyMap(),
     val asr: AsrSettings = AsrSettings(),
+    /**
+     * 火山方舟一体：一个 Key 打通聊天、操作、发图、朗读、识别与通话。
+     * 开了哪几项，那几项就归方舟管；没开的仍由各自的厂商设置负责。
+     */
+    val ark: ArkSettings = ArkSettings(),
     /** 朗读引擎：硅基 / 豆包 两套配置都保留，切换立即生效。 */
     val tts: TtsSettings = TtsSettings(),
     /** Real-time full-duplex call channel; empty key means it is off and the hands-free fallback is used. */
@@ -381,6 +390,7 @@ data class AppSettings(
             operatorVendors.values.forEach { add(it.apiKey) }
             add(asr.silicon.apiKey)
             add(asr.doubao.apiKey)
+            add(ark.apiKey)
             add(tts.silicon.apiKey)
             add(tts.doubao.apiKey)
             add(realtime.apiKey)
@@ -405,6 +415,8 @@ data class SettingsForm(
     val operatorVendors: Map<ModelVendor, ModelSettings> = emptyMap(),
     val asr: AsrForm = AsrForm(),
     val tts: TtsForm = TtsForm(),
+    /** 火山方舟一体：一个 Key 打通多项能力。 */
+    val ark: ArkForm = ArkForm(),
     val realtime: VoiceForm = VoiceForm(
         baseUrl = VoiceSettings.DEFAULT_REALTIME_BASE_URL,
         model = VoiceSettings.DEFAULT_REALTIME_MODEL,
@@ -426,8 +438,59 @@ data class SettingsForm(
     val learnFromSuccess: Boolean = true,
     val memoryEmbedding: MemoryEmbeddingSettings = MemoryEmbeddingSettings(),
 ) {
-    data class ModelForm(
-        val baseUrl: String = ModelSettings.DEFAULT_BASE_URL,
+    /**
+     * 火山方舟一体的表单：Key 填一次，下面接管哪几项就由哪几项用它。
+     * 单独放一个 form 是因为它管的是多个角色，不属于任何单一角色。
+     */
+    data class ArkForm(
+        val apiKey: String = "",
+        val chatModel: String = ArkCatalog.DEFAULT_CHAT_MODEL,
+        val operatorModel: String = ArkCatalog.DEFAULT_CHAT_MODEL,
+        val imageModel: String = ArkCatalog.DEFAULT_IMAGE_MODEL,
+        val useChat: Boolean = false,
+        val useOperator: Boolean = false,
+        val useImage: Boolean = false,
+        val useVoice: Boolean = false,
+    ) {
+        fun toSettings() = ArkSettings(
+            apiKey = apiKey.trim(),
+            chatModel = chatModel.trim().ifBlank { ArkCatalog.DEFAULT_CHAT_MODEL },
+            operatorModel = operatorModel.trim().ifBlank { ArkCatalog.DEFAULT_CHAT_MODEL },
+            imageModel = imageModel.trim().ifBlank { ArkCatalog.DEFAULT_IMAGE_MODEL },
+            useChat = useChat,
+            useOperator = useOperator,
+            useImage = useImage,
+            useVoice = useVoice,
+        )
+
+        /** 接管了任何一项就说一声，设置页据此提示下面那些项已被接管。 */
+        fun drives(capability: ArkCapability): Boolean = when (capability) {
+            ArkCapability.CHAT -> useChat
+            ArkCapability.OPERATOR -> useOperator
+            ArkCapability.IMAGE -> useImage
+            ArkCapability.VOICE -> useVoice
+        }
+
+        override fun toString() =
+            "ArkForm(useChat=$useChat, useOperator=$useOperator, useImage=$useImage, " +
+                "useVoice=$useVoice, chatModel=$chatModel, operatorModel=$operatorModel, " +
+                "imageModel=$imageModel, apiKey=${if (apiKey.isEmpty()) "<unset>" else "***"})"
+
+        companion object {
+            fun of(a: ArkSettings) = ArkForm(
+                apiKey = a.apiKey,
+                chatModel = a.chatModel,
+                operatorModel = a.operatorModel,
+                imageModel = a.imageModel,
+                useChat = a.useChat,
+                useOperator = a.useOperator,
+                useImage = a.useImage,
+                useVoice = a.useVoice,
+            )
+        }
+    }
+
+    data class ModelForm(        val baseUrl: String = ModelSettings.DEFAULT_BASE_URL,
         val model: String = "",
         val apiKey: String = "",
         val temperature: String = "",
@@ -592,22 +655,57 @@ data class SettingsForm(
     fun modelChoices(vendor: ModelVendor, fetched: List<String> = emptyList()): List<String> =
         (vendor.models + fetched).map { it.trim() }.filter { it.isNotEmpty() }.distinct()
 
+    /**
+     * 把方舟一体写进它接管的那几项。
+     *
+     * 只写开启的那几项；没开的原样保留，仍归各自的厂商设置管。
+     * 幂等：可以反复调用。
+     */
+    fun applyArk(): SettingsForm {
+        val a = ark.toSettings()
+        if (!a.enabled) return this
+        var chat = chat
+        var operator = operator
+        var image = image
+        var tts = tts
+        var asr = asr
+        var realtime = realtime
+        if (a.useChat) chat = ModelForm.of(a.chatSettings())
+        if (a.useOperator) operator = ModelForm.of(a.operatorSettings())
+        if (a.useImage) image = image.copy(model = a.imageModel)
+        if (a.useVoice) {
+            // 豆包语音与方舟共用一个 Key：朗读、识别、通话都换上它。
+            tts = tts.copy(
+                provider = TtsProvider.DOUBAO,
+                doubao = tts.doubao.copy(token = a.apiKey),
+            )
+            asr = asr.copy(
+                provider = AsrProvider.DOUBAO,
+                doubao = asr.doubao.copy(token = a.apiKey),
+            )
+            realtime = realtime.copy(apiKey = a.apiKey)
+        }
+        return copy(chat = chat, operator = operator, image = image, tts = tts, asr = asr, realtime = realtime)
+    }
+
     /** Null while a field is invalid. */
     fun toSettings(): AppSettings? {
         val steps = maxSteps.trim().toIntOrNull()?.takeIf { it in AppSettings.MAX_STEPS_RANGE } ?: return null
         val embedding = memoryEmbedding.normalized()
         if (embedding.enabled && !embedding.configured) return null
-        val chatSettings = chat.toSettings() ?: return null
-        val operatorSettings = operator.toSettings() ?: return null
+        // 方舟一体开着的话，它接管的那些项以方舟为准。
+        val effective = applyArk()
+        val chatSettings = effective.chat.toSettings() ?: return null
+        val operatorSettings = effective.operator.toSettings() ?: return null
         return AppSettings(
             chat = chatSettings,
             operator = operatorSettings,
             // 当前生效的那套也进档案：下次从别的厂商切回来时，Key 和模型都还在。
-            chatVendors = chatVendors + (chatSettings.vendor to chatSettings),
-            operatorVendors = operatorVendors + (operatorSettings.vendor to operatorSettings),
-            asr = asr.toSettings(),
-            tts = tts.toSettings(),
-            realtime = realtime.toSettings(),
+            chatVendors = effective.chatVendors + (chatSettings.vendor to chatSettings),
+            operatorVendors = effective.operatorVendors + (operatorSettings.vendor to operatorSettings),
+            asr = effective.asr.toSettings(),
+            tts = effective.tts.toSettings(),
+            realtime = effective.realtime.toSettings(),
             realtimeEnabled = realtimeEnabled,
             replyMode = replyMode,
             replyModeChosen = replyModeChosen,
@@ -617,11 +715,12 @@ data class SettingsForm(
             emojiStyle = emojiStyle,
             appearance = appearance,
             life = life,
-            image = image,
+            image = effective.image,
             personaVoiceNotice = personaVoiceNotice,
             maxSteps = steps,
             learnFromSuccess = learnFromSuccess,
             memoryEmbedding = embedding,
+            ark = ark.toSettings(),
         )
     }
 
@@ -633,6 +732,7 @@ data class SettingsForm(
             operatorVendors = s.operatorVendors,
             asr = AsrForm.of(s.asr),
             tts = TtsForm.of(s.tts),
+            ark = ArkForm.of(s.ark),
             realtime = VoiceForm.of(s.realtime),
             realtimeEnabled = s.realtimeEnabled,
             replyMode = s.replyMode,

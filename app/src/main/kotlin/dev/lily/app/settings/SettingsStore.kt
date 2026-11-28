@@ -60,6 +60,13 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
             putBoolean(PERSONA_VOICE_NOTICE, stored.personaVoiceNotice)
             putInt(MAX_STEPS, stored.maxSteps)
             putBoolean(LEARN, stored.learnFromSuccess)
+            putString(ARK_CHAT_MODEL, stored.ark.chatModel)
+            putString(ARK_OPERATOR_MODEL, stored.ark.operatorModel)
+            putString(ARK_IMAGE_MODEL, stored.ark.imageModel)
+            putBoolean(ARK_USE_CHAT, stored.ark.useChat)
+            putBoolean(ARK_USE_OPERATOR, stored.ark.useOperator)
+            putBoolean(ARK_USE_IMAGE, stored.ark.useImage)
+            putBoolean(ARK_USE_VOICE, stored.ark.useVoice)
         }
         val saved = secret.edit().apply {
             putString(CHAT + API_KEY, stored.chat.apiKey)
@@ -75,6 +82,7 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
             putString(MEMORY_EMBEDDING + BASE_URL, stored.memoryEmbedding.baseUrl)
             putString(MEMORY_EMBEDDING + MODEL, stored.memoryEmbedding.model)
             putString(MEMORY_EMBEDDING + API_KEY, stored.memoryEmbedding.apiKey)
+            putString(ARK + API_KEY, stored.ark.apiKey)
         }.commit()
         // A failed opt-in must never activate network requests in the running process.
         _settings.value = if (!saved && previous.memoryEmbedding != stored.memoryEmbedding) {
@@ -159,6 +167,19 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
                 baseUrl = secret.getString(MEMORY_EMBEDDING + BASE_URL, null).orEmpty(),
                 model = secret.getString(MEMORY_EMBEDDING + MODEL, null).orEmpty(),
                 apiKey = secret.getString(MEMORY_EMBEDDING + API_KEY, null).orEmpty(),
+            ),
+            ark = ArkSettings(
+                apiKey = secret.getString(ARK + API_KEY, null).orEmpty(),
+                chatModel = plain.getString(ARK_CHAT_MODEL, null)?.trim()?.takeIf { it.isNotBlank() }
+                    ?: defaults.ark.chatModel,
+                operatorModel = plain.getString(ARK_OPERATOR_MODEL, null)?.trim()?.takeIf { it.isNotBlank() }
+                    ?: defaults.ark.operatorModel,
+                imageModel = plain.getString(ARK_IMAGE_MODEL, null)?.trim()?.takeIf { it.isNotBlank() }
+                    ?: defaults.ark.imageModel,
+                useChat = plain.getBoolean(ARK_USE_CHAT, defaults.ark.useChat),
+                useOperator = plain.getBoolean(ARK_USE_OPERATOR, defaults.ark.useOperator),
+                useImage = plain.getBoolean(ARK_USE_IMAGE, defaults.ark.useImage),
+                useVoice = plain.getBoolean(ARK_USE_VOICE, defaults.ark.useVoice),
             ),
             replyMode = replyMode,
             replyModeChosen = replyChosenStored,
@@ -431,6 +452,14 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
         private const val REALTIME_ENABLED = "realtime.enabled"
         private const val MEMORY_EMBEDDING = "memoryEmbedding."
         private const val MEMORY_EMBEDDING_ENABLED = "memoryEmbedding.enabled"
+        private const val ARK = "ark."
+        private const val ARK_CHAT_MODEL = "ark.chatModel"
+        private const val ARK_OPERATOR_MODEL = "ark.operatorModel"
+        private const val ARK_IMAGE_MODEL = "ark.imageModel"
+        private const val ARK_USE_CHAT = "ark.useChat"
+        private const val ARK_USE_OPERATOR = "ark.useOperator"
+        private const val ARK_USE_IMAGE = "ark.useImage"
+        private const val ARK_USE_VOICE = "ark.useVoice"
         private const val BASE_URL = "baseUrl"
         private const val MODEL = "model"
         private const val API_KEY = "apiKey"

@@ -78,6 +78,9 @@ fun ModelsScreen(graph: AppGraph, onBack: () -> Unit) {
                 realtime = p.realtime,
                 realtimeEnabled = p.realtimeEnabled,
                 memoryEmbedding = p.memoryEmbedding,
+                ark = p.ark,
+                // 方舟接管发图时，发图模型也在这个表单里，不能漏掉。
+                image = p.image,
             ),
         )
         if (!persisted) {
@@ -117,6 +120,12 @@ fun ModelsScreen(graph: AppGraph, onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(Space.block),
         ) {
             SettingsNote(stringResource(R.string.models_subtitle))
+            SettingsGroup(stringResource(R.string.models_ark_title)) {
+                ArkSection(form.ark) {
+                    form = form.copy(ark = it).applyArk()
+                    saved = false
+                }
+            }
             SettingsGroup(stringResource(R.string.settings_chat_model)) {
                 KeyHint(stringResource(R.string.models_vendor_key_hint))
                 ModelSection(
@@ -130,6 +139,9 @@ fun ModelsScreen(graph: AppGraph, onBack: () -> Unit) {
                         saved = false
                     },
                 )
+                if (form.ark.drives(dev.lily.app.settings.ArkCapability.CHAT)) {
+                    SettingsNote(stringResource(R.string.models_ark_taken_over))
+                }
             }
 
             SettingsGroup(stringResource(R.string.settings_operator_model)) {
@@ -160,6 +172,9 @@ fun ModelsScreen(graph: AppGraph, onBack: () -> Unit) {
                     },
                     colors = ButtonDefaults.textButtonColors(contentColor = palette.ink2),
                 ) { Text(stringResource(R.string.settings_copy_chat)) }
+                if (form.ark.drives(dev.lily.app.settings.ArkCapability.OPERATOR)) {
+                    SettingsNote(stringResource(R.string.models_ark_taken_over))
+                }
             }
 
             SettingsGroup(stringResource(R.string.models_embedding_title)) {
