@@ -1,10 +1,10 @@
-# xiaoman CLI
+# lily CLI
 
-面向技能作者的开发工具。需要 Python 3.8+，只依赖标准库。通过 `adb` 与运行Lily debug 包的手机
+面向技能作者的开发工具。需要 Python 3.8+，只依赖标准库。通过 `adb` 与运行 Lily debug 包的手机
 通信（见 `docs/ARCHITECTURE.md` 中的「调试桥」）。
 
 ```
-python3 cli/xiaoman.py [--adb PATH] [--serial S] <command> ...
+python3 cli/lily.py [--adb PATH] [--serial S] <command> ...
 ```
 
 `--adb` 默认取 `$ADB`，否则用 `PATH` 上的 `adb`；`--serial`/`-s` 指定设备（adb 也会读取
@@ -23,10 +23,10 @@ python3 cli/xiaoman.py [--adb PATH] [--serial S] <command> ...
 示例：
 
 ```
-python3 cli/xiaoman.py lint skills/examples/*/
-python3 cli/xiaoman.py push skills/examples/taxi-home
-python3 cli/xiaoman.py run "打车回家" --skill taxi-home --follow
-python3 cli/xiaoman.py traces show cli-20261031-120000-ab12
+python3 cli/lily.py lint skills/examples/*/
+python3 cli/lily.py push skills/examples/taxi-home
+python3 cli/lily.py run "打车回家" --skill taxi-home --follow
+python3 cli/lily.py traces show cli-20261031-120000-ab12
 ```
 
 自动生成的 run id 形如 `cli-<日期>-<时间>-<随机串>`。使用 `--follow` 时请用新的 run id：logcat 缓冲区里

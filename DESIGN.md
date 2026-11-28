@@ -1,7 +1,7 @@
 # Lily Design System（原生设计系统 v1）
 
-> 本文件是 Lily Android 端的视觉基线，**由项目自身的 `app/src/main/kotlin/dev/xiaoman/app/ui/DesignTokens.kt` 导出**，
-> 与 `docs/ui-design-xiaoman.md`（设计审计与原则）配套。
+> 本文件是 Lily Android 端的视觉基线，**由项目自身的 `app/src/main/kotlin/dev/lily/app/ui/DesignTokens.kt` 导出**，
+> 与 `docs/ui-design-lily.md`（设计审计与原则）配套。
 > 所有取值必须能在 `DesignTokens.kt` 里找到对应 token，不允许在本文件里另造数值。
 > 引用写法：`token 名（值）`。
 

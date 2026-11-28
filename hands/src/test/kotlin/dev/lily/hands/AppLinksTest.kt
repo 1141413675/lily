@@ -29,7 +29,7 @@ class AppLinksTest {
 
     @Test
     fun minuteDefaultsToZeroAndLabelIsOptional() {
-        val intent = assertNotNull(AppLinks.intentFor(Uri.parse("XIAOMAN://alarm/set/?hour=7")))
+        val intent = assertNotNull(AppLinks.intentFor(Uri.parse("LILY://alarm/set/?hour=7")))
         assertEquals(0, intent.getIntExtra(AlarmClock.EXTRA_MINUTES, -1))
         assertFalse(intent.hasExtra(AlarmClock.EXTRA_MESSAGE))
     }

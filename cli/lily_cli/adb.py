@@ -18,7 +18,7 @@ RECEIVER = APP_PACKAGE + "/.debug.DebugReceiver"
 ACTION_RUN = "dev.lily.debug.RUN"
 ACTION_STOP = "dev.lily.debug.STOP"
 ACTION_RELOAD = "dev.lily.debug.RELOAD_SKILLS"
-LOG_TAG = "Xiaoman"
+LOG_TAG = "Lily"
 
 
 class AdbError(Exception):

@@ -5,6 +5,10 @@
 Lily is an open-source AI companion for Android. Set up a character, chat by text or voice,
 share private feed posts, and revisit your memories together.
 
+> AI companionship is like a lily: beautiful, fragrant, and poisonous to cats. Too controllable
+> is frightening; too charming is just as dangerous. Lily wants to be the flower that keeps its
+> own label attached.
+
 Lily also inherits optional assistant features. When enabled, it can help with phone actions
 through Android accessibility or connect to external services. Developers can extend these
 features with skill folders containing `SKILL.md` and an optional `flow.yaml`.
@@ -53,10 +57,10 @@ The GitHub Actions CI workflow also builds a Lily debug APK.
   debug build and shows traces:
 
 ```
-python3 cli/xiaoman.py lint skills/examples/*
-python3 cli/xiaoman.py push skills/examples/taxi-home
-python3 cli/xiaoman.py run "打开设置里的 Wi-Fi 页面" --skill open-settings-wifi --follow
-python3 cli/xiaoman.py traces show <run_id>
+python3 cli/lily.py lint skills/examples/*
+python3 cli/lily.py push skills/examples/taxi-home
+python3 cli/lily.py run "打开设置里的 Wi-Fi 页面" --skill open-settings-wifi --follow
+python3 cli/lily.py traces show <run_id>
 ```
 
 ## Layout
@@ -67,10 +71,34 @@ LLM client, memory, skills, sentinel, agent), `hands` is the accessibility layer
 ## Memory
 
 Notes are Markdown files in the Basic Memory format under
-`/sdcard/Android/data/dev.lily.app/files/memory/`, so you can read and edit them in Obsidian.
+`/sdcard/Android/data/dev.lily.app/files/memory/`.
 Forgetting deletes the file.
+
+Those files belong to you, not to the app: pull the whole directory over `adb`, or open it with a
+file manager where you have permission.
+
+## Upstream vs. Lily
+
+Lily is built on the open-source project Xiaoman (MIT, upstream copyright retained). Roughly:
+
+**Inherited from upstream**: the accessibility-driven phone-action loop, the Sentinel policy layer, the
+Basic Memory format and the skill system (`SKILL.md` / `flow.yaml`), MCP connectivity, the iOS WDA and
+web versions, and the TRAE classroom handbook.
+
+**Built for Lily**:
+
+- **Multi-agent companionship** — every character has its own profile, conversations, companionship
+  settings, memories, and call records, and several agents can live in one app.
+- **Semantic memory** — optional vector retrieval on top of keyword search, with a per-character local
+  index and a keyword fallback when embeddings are unavailable.
+- **Group chats** — several agents in one room, with its own group list and session management.
+- **Trash** — deleted agents and conversations can be restored.
+- **Voice** — Doubao 2.0 streaming ASR and TTS with SiliconFlow as fallback; voices belong to a single
+  agent instead of a global setting.
+- **Interface redesign** — a Claude-style design system (paper background, terracotta accent, serif
+  headings, larger body text, ≥48dp touch targets).
 
 ## License
 
-Lily is based on Lily and retains the upstream MIT license and copyright notice.
+Lily is based on Xiaoman and retains the upstream MIT license and copyright notice.
 See [LICENSE](LICENSE).

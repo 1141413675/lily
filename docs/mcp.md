@@ -1,6 +1,6 @@
 # 接入 MCP：不操作手机也能办事
 
-查天气、规划路线、查车票、叫车、点餐这类事，很多平台已经提供了 MCP 服务。Lily可以直接调用这些服务，不用在手机上一步步点。iPhone 用户也能用，因为这条路不需要操作手机屏幕。
+查天气、规划路线、查车票、叫车、点餐这类事，很多平台已经提供了 MCP 服务。Lily 可以直接调用这些服务，不用在手机上一步步点。iPhone 用户也能用，因为这条路不需要操作手机屏幕。
 
 聊天模型会同时看到内置工具（记忆、提醒、`phone_task`）和 MCP 工具。MCP 工具名的格式是 `服务器名__工具名`，比如 `amap__maps_weather`。能用 MCP 工具完成的事，模型会优先用工具；剩下只有 App 能做的事，再交给 `phone_task` 操作手机。
 
@@ -43,7 +43,7 @@ ios-runner chat
 
 ## 一键勾选
 
-内置目录在 `core-mcp/src/main/resources/dev/xiaoman/mcp/catalog.json`，安卓 App 的「服务」页和网页版的「服务」页都读这份目录：打开开关、填 Key、点「测试连接」即可，也可以添加任意 https 的 MCP 服务。需要 Node.js 的 stdio 服务（如 12306）不会出现在安卓 App 上；网页版只在服务器装了 Node.js 时可用，否则显示为不可用，见 [web.md](web.md#12306-火车票需要-nodejs)。
+内置目录在 `core-mcp/src/main/resources/dev/lily/mcp/catalog.json`，安卓 App 的「服务」页和网页版的「服务」页都读这份目录：打开开关、填 Key、点「测试连接」即可，也可以添加任意 https 的 MCP 服务。需要 Node.js 的 stdio 服务（如 12306）不会出现在安卓 App 上；网页版只在服务器装了 Node.js 时可用，否则显示为不可用，见 [web.md](web.md#12306-火车票需要-nodejs)。
 
 ## 在安卓 App 上用
 

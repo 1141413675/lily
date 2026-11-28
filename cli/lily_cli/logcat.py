@@ -1,15 +1,16 @@
-"""Parsing of ``Xiaoman: <run_id> <EventKind> <json>`` logcat lines."""
+"""Parsing of ``Lily: <run_id> <EventKind> <json>`` logcat lines."""
 
 from __future__ import annotations
 
 import json
 import re
 
+from .adb import LOG_TAG
 from .traces import event_fields
 
-# threadtime: "10-31 12:00:00.123  1234  1250 I Xiaoman: r1 StepPlanned {...}"
-# brief:      "I/Xiaoman( 1234): r1 StepPlanned {...}"
-_TAG_RE = re.compile(r"(?:^|[\s/])Xiaoman\s*(?:\(\s*\d+\))?\s*:\s(?P<msg>.*)$")
+# threadtime: "10-31 12:00:00.123  1234  1250 I Lily: r1 StepPlanned {...}"
+# brief:      "I/Lily( 1234): r1 StepPlanned {...}"
+_TAG_RE = re.compile(r"(?:^|[\s/])%s\s*(?:\(\s*\d+\))?\s*:\s(?P<msg>.*)$" % re.escape(LOG_TAG))
 _TIME_RE = re.compile(r"^(?:\d\d-\d\d\s+)?(?P<time>\d\d:\d\d:\d\d\.\d+)")
 _KIND_RE = re.compile(r"^[A-Z][A-Za-z0-9]*$")
 
@@ -43,7 +44,7 @@ class LogEvent:
 
 
 def message_of(line: str):
-    """The log message of a Xiaoman-tagged logcat line, or None."""
+    """The log message of a Lily-tagged logcat line, or None."""
     m = _TAG_RE.search(line.rstrip("\r\n"))
     return m.group("msg") if m else None
 

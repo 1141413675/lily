@@ -4,6 +4,8 @@
 
 Lily 是一款开源 Android AI 陪伴应用。你可以设定角色，通过文字和语音聊天，分享私密动态，并翻看一起留下的记忆。
 
+> AI 陪伴像百合：好看，香，但有毒。太可控反而可怕，太迷人同样危险。Lily 想做的是那朵**贴着自己标签**的花。
+
 Lily 保留了上游的可选助理能力。启用后，它可以通过 Android 无障碍服务协助操作手机，也可以连接外部服务。开发者可以用包含 `SKILL.md` 和可选 `flow.yaml` 的技能目录扩展助理能力。
 
 - Android 版需要 Android 11（API 30）及以上。
@@ -60,7 +62,8 @@ GitHub Actions 的 CI 工作流也会生成 Lily 调试版 APK。
 
 ## 课堂实践
 
-[学生动手手册](docs/classroom.md) 是基于上游Lily项目的 TRAE 训练营教材，包含手机任务、档案和技能练习。
+[学生动手手册](docs/classroom.md) 是基于上游小满项目的 TRAE 训练营教材，包含手机任务、档案和技能练习（文中已统一使用 Lily 的名称）。
+它面向「第一次把 Lily 装进手机」的教学场景，和上面面向开发者的文档是两条独立路径——你可以只读其中一条。
 
 ## 技能与开发者 CLI
 
@@ -68,16 +71,16 @@ GitHub Actions 的 CI 工作流也会生成 Lily 调试版 APK。
 - [cli/](cli/README.md)（Python 3，仅依赖标准库）可以校验技能、通过 adb 推送到手机、在 debug 包上直接跑任务并查看轨迹：
 
 ```bash
-python3 cli/xiaoman.py lint skills/examples/*
-python3 cli/xiaoman.py push skills/examples/taxi-home
-python3 cli/xiaoman.py run "打开设置里的 Wi-Fi 页面" --skill open-settings-wifi --follow
-python3 cli/xiaoman.py traces show <run_id>
+python3 cli/lily.py lint skills/examples/*
+python3 cli/lily.py push skills/examples/taxi-home
+python3 cli/lily.py run "打开设置里的 Wi-Fi 页面" --skill open-settings-wifi --follow
+python3 cli/lily.py traces show <run_id>
 ```
 
 ## 目录结构
 
 ```
-xiaoman/
+lily/
 ├── core-api/        # 接口与数据结构，其他模块只依赖它
 ├── core-llm/        # 兼容 OpenAI 的模型客户端
 ├── core-memory/     # 记忆：Basic Memory 格式的 Markdown 笔记 + 中文检索
@@ -102,9 +105,26 @@ xiaoman/
 ## 记忆
 
 记忆是 Basic Memory 格式的 Markdown 文件，存放在
-`/sdcard/Android/data/dev.lily.app/files/memory/`，可以直接拷进 Obsidian 查看和编辑。
+`/sdcard/Android/data/dev.lily.app/files/memory/`。
 「忘记」会直接删除对应文件。
+
+这些文件属于你，不是属于 App：可以用 `adb` 把整个目录拉下来，或者用文件管理器在有权限时打开。
+
+## 上游与自研
+
+Lily 以开源项目「小满（Xiaoman）」为底座（MIT 协议，保留上游版权声明）。分工大致是：
+
+**来自上游**：Android 无障碍驱动的手机操作循环、Sentinel 安全策略层、Basic Memory 记忆格式与技能（SKILL.md / flow.yaml）体系、MCP 接入、iOS WDA 与网页版，以及 TRAE 训练营课堂手册。
+
+**Lily 自研**：
+
+- **多智能体陪伴**：每个角色拥有独立的档案、对话、陪伴设定、记忆与通话记录，可在同一个 App 里并存多个 Agent。
+- **语义记忆**：在关键词检索之外提供可选的向量检索，每个角色维护自己的本地索引，缺少 embedding 时回落到关键词。
+- **群聊**：多个 Agent 同一间房的对话形态，以及对应的群列表与会话管理。
+- **回收站**：删除的 Agent 与对话可恢复，避免误删不可逆。
+- **语音链路**：接入豆包 2.0 流式语音识别与 TTS，硅基作为兜底；音色归属到单个 Agent，不再全局设置。
+- **界面重设计**：纸底 + 陶土红的 Claude 风格设计系统，衬线标题、放大的正文字号与 ≥48dp 的点按区。
 
 ## 许可证
 
-Lily 基于Lily（Lily）项目，沿用 MIT 许可证并保留上游版权声明。详见 [LICENSE](LICENSE)。
+Lily 基于小满（Xiaoman）项目，沿用 MIT 许可证并保留上游版权声明。详见 [LICENSE](LICENSE)。

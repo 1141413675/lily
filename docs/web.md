@@ -1,6 +1,6 @@
-# Lily网页版：iPhone 不装 App 也能用
+# Lily 网页版：iPhone 不装 App 也能用
 
-iPhone 不允许一个 App 操作其他 App，没有付费开发者账号也发不了 TestFlight。Lily网页版绕开这两个限制：用 Safari 打开链接，点「分享 → 添加到主屏幕」，之后像 App 一样从桌面的Lily图标打开。界面配色、图标与安卓 App 一致，安卓和电脑的浏览器同样能用。
+iPhone 不允许一个 App 操作其他 App，没有付费开发者账号也发不了 TestFlight。Lily 网页版绕开这两个限制：用 Safari 打开链接，点「分享 → 添加到主屏幕」，之后像 App 一样从桌面的 Lily 图标打开。界面配色、图标与安卓 App 一致，安卓和电脑的浏览器同样能用。
 
 网页版不操作手机屏幕，靠 [MCP 服务](mcp.md) 办事：在「服务」页勾选高德、滴滴等，或者添加任意一个 https 的 MCP 服务。
 
@@ -13,7 +13,7 @@ iPhone 不允许一个 App 操作其他 App，没有付费开发者账号也发�
 | 接入其他 MCP | 填名称、https 地址、可选 Authorization 头，选择调用前什么时候确认 |
 | 调用前确认 | 叫车、下单等写操作会弹出确认卡片，点「允许」才执行，点「拒绝」或 3 分钟不处理就取消 |
 | 提醒 | 网页不能在后台定时弹通知，提醒会生成「添加到日历」按钮，交给 iPhone 日历按时提醒 |
-| 记忆 | 说「记住我喜欢燕麦拿铁」，Lily会记下来；刷新页面、服务器重启后仍在。「设置 → Lily的记忆」里可以查看、删除单条或清空 |
+| 记忆 | 说「记住我喜欢燕麦拿铁」，Lily 会记下来；刷新页面、服务器重启后仍在。「设置 → Lily 的记忆」里可以查看、删除单条或清空 |
 | 跳转 App | 回复里的链接和高德、淘宝等 App 跳转链接可以直接点 |
 
 做不到的：操作手机上的 App（这需要安卓版或 Mac + WDA）；网页不能后台运行，关掉页面后不会主动提醒（提醒请添加到日历）。
@@ -31,7 +31,7 @@ iPhone 不允许一个 App 操作其他 App，没有付费开发者账号也发�
 
 ## Key 放在哪里
 
-模型 Key 和服务 Key 只保存在这台手机的浏览器里，每次对话随请求发给Lily服务器转发，服务器只在内存里使用，不写磁盘、不写日志。不要在别人的手机或公共电脑上填写 Key；用完可以在「设置 → 清除所有本地数据」里删除。
+模型 Key 和服务 Key 只保存在这台手机的浏览器里，每次对话随请求发给 Lily 服务器转发，服务器只在内存里使用，不写磁盘、不写日志。不要在别人的手机或公共电脑上填写 Key；用完可以在「设置 → 清除所有本地数据」里删除。
 
 ## 课堂令牌
 
@@ -78,7 +78,7 @@ XIAOMAN_WEB_ACCESS_CODE=课堂口令 web-server/build/install/web-server/bin/web
 
 ## 接口
 
-前端与服务器同源，接口定义在 `web-server/src/main/resources/web/app.js` 顶部注释里：`/api/info`（含 `classTokens`）、`/api/catalog`、`/api/session`、`/api/chat`（SSE 事件流，请求里带 `memory.notes`；课堂模式 `model` 为 `{classToken}`）、`/api/answer`、`/api/mcp/test`，以及领取页用的 `/api/claim/start`、`/api/claim/verify`（不需要访问码，有限流；定义见 `claim.js` 顶部）。服务器端的记忆格式见 `web-server/src/main/kotlin/dev/xiaoman/web/BrowserMemory.kt`。课堂令牌见 `ClassGateway.kt`（`/v1` 转发、限流、记账）、`ClassTokens.kt`（令牌文件）、`ClassTokenAdmin.kt`（`web-server tokens` 命令），自助领取见 `ForumClaims.kt`（论坛读取、验证短语、发放）。
+前端与服务器同源，接口定义在 `web-server/src/main/resources/web/app.js` 顶部注释里：`/api/info`（含 `classTokens`）、`/api/catalog`、`/api/session`、`/api/chat`（SSE 事件流，请求里带 `memory.notes`；课堂模式 `model` 为 `{classToken}`）、`/api/answer`、`/api/mcp/test`，以及领取页用的 `/api/claim/start`、`/api/claim/verify`（不需要访问码，有限流；定义见 `claim.js` 顶部）。服务器端的记忆格式见 `web-server/src/main/kotlin/dev/lily/web/BrowserMemory.kt`。课堂令牌见 `ClassGateway.kt`（`/v1` 转发、限流、记账）、`ClassTokens.kt`（令牌文件）、`ClassTokenAdmin.kt`（`web-server tokens` 命令），自助领取见 `ForumClaims.kt`（论坛读取、验证短语、发放）。
 
 ## 测试
 

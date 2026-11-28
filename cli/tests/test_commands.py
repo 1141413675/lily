@@ -10,8 +10,8 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 
-from xiaoman_cli.adb import Adb, broadcast_command  # noqa: E402
-from xiaoman_cli.main import build_parser, main, new_run_id  # noqa: E402
+from lily_cli.adb import Adb, broadcast_command  # noqa: E402
+from lily_cli.main import build_parser, main, new_run_id  # noqa: E402
 
 FIXTURE = os.path.join(HERE, "fixtures", "skills", "ride-home")
 SKILLS = "/sdcard/Android/data/dev.lily.app/files/skills"
@@ -135,17 +135,17 @@ class CommandTest(unittest.TestCase):
     def test_run_follow(self):
         lines = [
             "--------- beginning of main\n",
-            "10-31 12:00:00.000  1  1 I Xiaoman: old StepPlanned {\"step\": 9}\n",
-            "10-31 12:00:01.000  1  1 I Xiaoman: r9 PhoneTaskStarted {\"goal\": \"打开设置\"}\n",
-            "10-31 12:00:02.000  1  1 I Xiaoman: r9 StepPlanned {\"step\": 0, \"action\": {\"type\": \"home\"}}\n",
-            "10-31 12:00:03.000  1  1 I Xiaoman: r9 PhoneTaskFinished {\"success\": true, \"summary\": \"ok\"}\n",
-            "10-31 12:00:04.000  1  1 I Xiaoman: r9 StepPlanned {\"step\": 99}\n",
+            "10-31 12:00:00.000  1  1 I Lily: old StepPlanned {\"step\": 9}\n",
+            "10-31 12:00:01.000  1  1 I Lily: r9 PhoneTaskStarted {\"goal\": \"打开设置\"}\n",
+            "10-31 12:00:02.000  1  1 I Lily: r9 StepPlanned {\"step\": 0, \"action\": {\"type\": \"home\"}}\n",
+            "10-31 12:00:03.000  1  1 I Lily: r9 PhoneTaskFinished {\"success\": true, \"summary\": \"ok\"}\n",
+            "10-31 12:00:04.000  1  1 I Lily: r9 StepPlanned {\"step\": 99}\n",
         ]
         fake = FakeAdb(lines)
         code, out, _ = fake.run_main(["run", "打开设置", "--run-id", "r9", "--follow"])
         self.assertEqual(code, 0)
         # logcat is spawned before the broadcast
-        self.assertEqual(fake.calls[0], ("spawn", ["adb", "logcat", "-v", "threadtime", "-s", "Xiaoman"]))
+        self.assertEqual(fake.calls[0], ("spawn", ["adb", "logcat", "-v", "threadtime", "-s", "Lily"]))
         self.assertEqual(fake.calls[1][0], "run")
         shown = out.strip().splitlines()
         self.assertEqual(len(shown), 3)
@@ -154,7 +154,7 @@ class CommandTest(unittest.TestCase):
         self.assertTrue(fake.procs[0].terminated)
 
     def test_run_follow_failure_exit_code(self):
-        fake = FakeAdb(["I Xiaoman: r9 Failed {\"message\": \"x\"}\n"])
+        fake = FakeAdb(["I Lily: r9 Failed {\"message\": \"x\"}\n"])
         code, _, _ = fake.run_main(["run", "g", "--run-id", "r9", "-f"])
         self.assertEqual(code, 1)
         fake = FakeAdb([])
@@ -191,9 +191,9 @@ class CommandTest(unittest.TestCase):
 
     def test_logs(self):
         lines = [
-            "I Xiaoman: r1 StepPlanned {\"step\": 1}\n",
-            "I Xiaoman: r2 StepPlanned {\"step\": 2}\n",
-            "I Xiaoman: skills reloaded: 1 problem\n",
+            "I Lily: r1 StepPlanned {\"step\": 1}\n",
+            "I Lily: r2 StepPlanned {\"step\": 2}\n",
+            "I Lily: skills reloaded: 1 problem\n",
         ]
         code, out, _ = FakeAdb(lines).run_main(["logs"])
         self.assertEqual(code, 0)
