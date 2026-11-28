@@ -39,7 +39,7 @@ import kotlinx.coroutines.launch
 @Composable
 internal fun UsageSection(
     store: UsageStore,
-    ark: dev.lily.app.settings.ArkSettings,
+    unified: dev.lily.app.settings.UnifiedProvider,
 ) {
     val revision by store.revision.collectAsStateWithLifecycle()
     val today = remember(revision) { store.today() }
@@ -96,7 +96,7 @@ internal fun UsageSection(
         SettingsNote(stringResource(R.string.models_usage_empty))
     }
 
-    OfficialUsageBlock(ark)
+    OfficialUsageBlock(unified)
 }
 
 /**
@@ -106,7 +106,7 @@ internal fun UsageSection(
  * 包括别的程序调的。两者对不上很正常——官方那份还含缓存命中的折扣价。
  */
 @Composable
-private fun OfficialUsageBlock(ark: dev.lily.app.settings.ArkSettings) {
+private fun OfficialUsageBlock(ark: dev.lily.app.settings.UnifiedProvider) {
     if (!ark.hasAccount) return
     var usage by remember { mutableStateOf<dev.lily.app.volc.OfficialUsage?>(null) }
     var loading by remember { mutableStateOf(false) }

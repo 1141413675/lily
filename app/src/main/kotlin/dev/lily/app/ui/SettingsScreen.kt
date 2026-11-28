@@ -483,7 +483,9 @@ private fun ImageSettingsScreen(graph: AppGraph, onBack: () -> Unit) {
         }
         if (stored.image.enabled) {
             // 方舟一体接管发图时，模型由那边定；这里改了也会被覆盖，干脆只读。
-            val arkDrivesImage = stored.ark.enabled && stored.ark.useImage
+            val arkDrivesImage = stored.unified.enabled &&
+                stored.provisioning == dev.lily.app.settings.ProvisioningMode.UNIFIED &&
+                stored.unified.isVolcano && stored.unified.imageModel.isNotBlank()
             SettingsGroup("图片模型") {
                 OutlinedTextField(
                     value = stored.image.model,

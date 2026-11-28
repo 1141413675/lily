@@ -78,8 +78,9 @@ fun ModelsScreen(graph: AppGraph, onBack: () -> Unit) {
                 realtime = p.realtime,
                 realtimeEnabled = p.realtimeEnabled,
                 memoryEmbedding = p.memoryEmbedding,
-                ark = p.ark,
-                // 方舟接管发图时，发图模型也在这个表单里，不能漏掉。
+                provisioning = p.provisioning,
+                unified = p.unified,
+                // 一体化接管发图时，发图模型也在这个表单里，不能漏掉。
                 image = p.image,
             ),
         )
@@ -120,109 +121,113 @@ fun ModelsScreen(graph: AppGraph, onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(Space.block),
         ) {
             SettingsNote(stringResource(R.string.models_subtitle))
-            SettingsGroup(stringResource(R.string.models_ark_title)) {
-                ArkSection(form.ark) {
-                    form = form.copy(ark = it).applyArk()
+            SettingsGroup(stringResource(R.string.models_provisioning_title)) {
+                ProvisioningSection(form.provisioning) {
+                    form = form.copy(provisioning = it)
                     saved = false
+                }
+            }
+            if (form.provisioning == dev.lily.app.settings.ProvisioningMode.UNIFIED) {
+                SettingsGroup(stringResource(R.string.models_unified_title)) {
+                    UnifiedSection(form.unified) {
+                        form = form.copy(unified = it)
+                        saved = false
+                    }
                 }
             }
             SettingsGroup(stringResource(R.string.models_usage_title)) {
-                UsageSection(graph.usageStore, settings.ark)
+                UsageSection(graph.usageStore, settings.unified)
             }
-            SettingsGroup(stringResource(R.string.settings_chat_model)) {
-                KeyHint(stringResource(R.string.models_vendor_key_hint))
-                ModelSection(
-                    model = form.chat,
-                    onChange = {
-                        form = form.copy(chat = it)
-                        saved = false
-                    },
-                    onVendor = {
-                        form = form.withChatVendor(it)
-                        saved = false
-                    },
-                )
-                if (form.ark.drives(dev.lily.app.settings.ArkCapability.CHAT)) {
-                    SettingsNote(stringResource(R.string.models_ark_taken_over))
+            if (form.provisioning == dev.lily.app.settings.ProvisioningMode.CUSTOM) {
+                SettingsGroup(stringResource(R.string.settings_chat_model)) {
+                    KeyHint(stringResource(R.string.models_vendor_key_hint))
+                    ModelSection(
+                        model = form.chat,
+                        onChange = {
+                            form = form.copy(chat = it)
+                            saved = false
+                        },
+                        onVendor = {
+                            form = form.withChatVendor(it)
+                            saved = false
+                        },
+                    )
                 }
-            }
 
-            SettingsGroup(stringResource(R.string.settings_operator_model)) {
-                KeyHint(stringResource(R.string.models_vendor_key_hint))
-                ModelSection(
-                    model = form.operator,
-                    onChange = {
-                        form = form.copy(operator = it)
+                SettingsGroup(stringResource(R.string.settings_operator_model)) {
+                    KeyHint(stringResource(R.string.models_vendor_key_hint))
+                    ModelSection(
+                        model = form.operator,
+                        onChange = {
+                            form = form.copy(operator = it)
+                            saved = false
+                        },
+                        onVendor = {
+                            form = form.withOperatorVendor(it)
+                            saved = false
+                        },
+                    )
+                    TextButton(
+                        onClick = {
+                            // 操作模型沿用聊天模型的厂商与 Key，只把模型名换成视觉模型。
+                            form = form.copy(
+                                operator = form.operator.copy(
+                                    baseUrl = form.chat.baseUrl,
+                                    apiKey = form.chat.apiKey,
+                                    vendor = form.chat.vendor,
+                                    protocol = form.chat.protocol,
+                                ),
+                            )
+                            saved = false
+                        },
+                        colors = ButtonDefaults.textButtonColors(contentColor = palette.ink2),
+                    ) { Text(stringResource(R.string.settings_copy_chat)) }
+                }
+
+                SettingsGroup(stringResource(R.string.models_embedding_title)) {
+                    MemoryEmbeddingSection(form.memoryEmbedding) {
+                        form = form.copy(memoryEmbedding = it)
                         saved = false
-                    },
-                    onVendor = {
-                        form = form.withOperatorVendor(it)
+                    }
+                }
+
+                SettingsGroup(stringResource(R.string.settings_asr)) {
+                    SettingsNote(stringResource(R.string.models_asr_provider_hint))
+                    AsrSection(form.asr) {
+                        form = form.copy(asr = it)
                         saved = false
-                    },
-                )
-                TextButton(
-                    onClick = {
-                        // 操作模型沿用聊天模型的厂商与 Key，只把模型名换成视觉模型。
-                        form = form.copy(
-                            operator = form.operator.copy(
-                                baseUrl = form.chat.baseUrl,
-                                apiKey = form.chat.apiKey,
-                                vendor = form.chat.vendor,
-                                protocol = form.chat.protocol,
-                            ),
-                        )
+                    }
+                }
+
+                SettingsGroup(stringResource(R.string.settings_tts)) {
+                    SettingsNote(stringResource(R.string.models_tts_provider_hint))
+                    TtsSection(form.tts) {
+                        form = form.copy(tts = it)
                         saved = false
-                    },
-                    colors = ButtonDefaults.textButtonColors(contentColor = palette.ink2),
-                ) { Text(stringResource(R.string.settings_copy_chat)) }
-                if (form.ark.drives(dev.lily.app.settings.ArkCapability.OPERATOR)) {
-                    SettingsNote(stringResource(R.string.models_ark_taken_over))
+                    }
+                    SettingsNote(stringResource(R.string.models_voice_hint))
                 }
-            }
 
-            SettingsGroup(stringResource(R.string.models_embedding_title)) {
-                MemoryEmbeddingSection(form.memoryEmbedding) {
-                    form = form.copy(memoryEmbedding = it)
-                    saved = false
+                SettingsGroup(stringResource(R.string.settings_realtime)) {
+                    SettingsRow(
+                        title = stringResource(R.string.models_realtime_switch),
+                        trailing = {
+                            LilySwitch(
+                                checked = form.realtimeEnabled,
+                                onCheckedChange = {
+                                    form = form.copy(realtimeEnabled = it)
+                                    saved = false
+                                },
+                            )
+                        },
+                    )
+                    KeyHint(stringResource(R.string.models_key_doubao_realtime))
+                    VoiceSection(form.realtime) {
+                        form = form.copy(realtime = it)
+                        saved = false
+                    }
+                    SettingsNote(stringResource(R.string.settings_realtime_hint))
                 }
-            }
-
-            SettingsGroup(stringResource(R.string.settings_asr)) {
-                SettingsNote(stringResource(R.string.models_asr_provider_hint))
-                AsrSection(form.asr) {
-                    form = form.copy(asr = it)
-                    saved = false
-                }
-            }
-
-            SettingsGroup(stringResource(R.string.settings_tts)) {
-                SettingsNote(stringResource(R.string.models_tts_provider_hint))
-                TtsSection(form.tts) {
-                    form = form.copy(tts = it)
-                    saved = false
-                }
-                SettingsNote(stringResource(R.string.models_voice_hint))
-            }
-
-            SettingsGroup(stringResource(R.string.settings_realtime)) {
-                SettingsRow(
-                    title = stringResource(R.string.models_realtime_switch),
-                    trailing = {
-                        LilySwitch(
-                            checked = form.realtimeEnabled,
-                            onCheckedChange = {
-                                form = form.copy(realtimeEnabled = it)
-                                saved = false
-                            },
-                        )
-                    },
-                )
-                KeyHint(stringResource(R.string.models_key_doubao_realtime))
-                VoiceSection(form.realtime) {
-                    form = form.copy(realtime = it)
-                    saved = false
-                }
-                SettingsNote(stringResource(R.string.settings_realtime_hint))
             }
         }
         Surface(color = palette.surface) {

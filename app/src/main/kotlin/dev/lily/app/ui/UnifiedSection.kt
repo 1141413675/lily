@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -34,33 +35,86 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import dev.lily.app.R
 import dev.lily.app.settings.ArkCatalog
-import dev.lily.app.settings.ArkModel
-import dev.lily.app.settings.ArkModality
+import dev.lily.app.settings.ModelVendor
+import dev.lily.app.settings.ProvisioningMode
 import dev.lily.app.settings.SettingsForm
+import dev.lily.app.volc.ArkControlPlane
+import dev.lily.app.volc.PriceBook
+import dev.lily.app.volc.VolcCredential
 import kotlinx.coroutines.launch
 
 /**
- * 「火山方舟一体」面板：一个 Key，多项能力。
+ * 「模型接法」：一体化还是自定义。
  *
- * 结构是：先填 Key，再逐项打开要接管的开关，打开的那几项各自挑一个模型，
- * 模型下面直接写着官方价格——选之前就知道大概要花多少钱。
+ * - **一体化**：挑一个服务方，一个 Key 打通它的全部模型。适合火山方舟这种
+ *   「一个账号什么都有」的服务。
+ * - **自定义**：语言、语音、通话各挑各的厂家。适合各家各有优势的情况。
  */
 @Composable
-internal fun ArkSection(
-    form: SettingsForm.ArkForm,
-    onChange: (SettingsForm.ArkForm) -> Unit,
+internal fun ProvisioningSection(
+    mode: ProvisioningMode,
+    onMode: (ProvisioningMode) -> Unit,
 ) {
-    var showKey by remember { mutableStateOf(false) }
-    val hasKey = form.apiKey.isNotBlank()
-    val arkOnly = form.apiKey.trim().startsWith("ark-", ignoreCase = true)
+    SettingsNote(stringResource(R.string.models_provisioning_hint))
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(Space.sm),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        FilterChip(
+            selected = mode == ProvisioningMode.UNIFIED,
+            onClick = { onMode(ProvisioningMode.UNIFIED) },
+            label = { Text(stringResource(R.string.models_provisioning_unified)) },
+        )
+        FilterChip(
+            selected = mode == ProvisioningMode.CUSTOM,
+            onClick = { onMode(ProvisioningMode.CUSTOM) },
+            label = { Text(stringResource(R.string.models_provisioning_custom)) },
+        )
+    }
+    SettingsNote(
+        stringResource(
+            if (mode == ProvisioningMode.UNIFIED) {
+                R.string.models_provisioning_unified_hint
+            } else {
+                R.string.models_provisioning_custom_hint
+            },
+        ),
+    )
+}
 
-    SettingsNote(stringResource(R.string.models_ark_hint))
+/**
+ * 一体化面板：一个服务方、一个 Key、几个模型。
+ *
+ * 结构是：先选服务方，填它的 Key，再挑模型——模型下面直接写着价格，
+ * 选之前就知道大概要花多少钱。
+ */
+@Composable
+internal fun UnifiedSection(
+    form: SettingsForm.UnifiedForm,
+    onChange: (SettingsForm.UnifiedForm) -> Unit,
+) {
+    var vendorMenu by remember { mutableStateOf(false) }
+    var showKey by remember { mutableStateOf(false) }
+    val provider = form.toSettings()
+
+    FieldLabel(stringResource(R.string.models_unified_vendor)) {
+        OutlinedButton(onClick = { vendorMenu = true }, modifier = Modifier.fillMaxWidth()) {
+            Text(form.vendor.displayName, modifier = Modifier.weight(1f))
+            Icon(Icons.Filled.ArrowDropDown, contentDescription = stringResource(R.string.models_pick_vendor))
+        }
+    }
+    if (vendorMenu) {
+        VendorPickerSheet(
+            current = form.vendor,
+            onPick = { onChange(form.copy(vendor = it)) },
+            onDismiss = { vendorMenu = false },
+        )
+    }
 
     OutlinedTextField(
         value = form.apiKey,
         onValueChange = { onChange(form.copy(apiKey = it)) },
-        label = { Text(stringResource(R.string.models_ark_key)) },
-        placeholder = { Text("ark-…") },
+        label = { Text(stringResource(R.string.models_unified_api_key)) },
         visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
         trailingIcon = {
@@ -76,73 +130,54 @@ internal fun ArkSection(
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
     )
-    SettingsNote(stringResource(R.string.models_ark_key_hint))
+    SettingsNote(stringResource(R.string.models_unified_key_hint))
 
-    if (arkOnly && form.useVoice) {
-        SettingsNote(stringResource(R.string.models_ark_key_ark_only))
+    if (provider.isVolcano) {
+        SettingsNote(stringResource(R.string.models_ark_key_hint))
+        if (provider.looksLikeArkOnlyKey) {
+            SettingsNote(stringResource(R.string.models_ark_key_ark_only))
+        }
     }
 
-    if (!hasKey) return
-
-    ArkCapabilityRow(
-        title = stringResource(R.string.models_ark_use_chat),
-        on = form.useChat,
-    ) { onChange(form.copy(useChat = it)) }
-
-    ArkCapabilityRow(
-        title = stringResource(R.string.models_ark_use_operator),
-        on = form.useOperator,
-    ) { onChange(form.copy(useOperator = it)) }
-
-    ArkCapabilityRow(
-        title = stringResource(R.string.models_ark_use_image),
-        on = form.useImage,
-    ) { onChange(form.copy(useImage = it)) }
-
-    ArkCapabilityRow(
-        title = stringResource(R.string.models_ark_use_voice),
-        on = form.useVoice,
-    ) { onChange(form.copy(useVoice = it)) }
-    if (form.useVoice) SettingsNote(stringResource(R.string.models_ark_use_voice_hint))
-
-    if (form.useChat) {
-        ArkModelField(
-            label = stringResource(R.string.models_ark_model_chat),
-            value = form.chatModel,
-            modality = ArkModality.CHAT,
-            onChange = { onChange(form.copy(chatModel = it)) },
-        )
-    }
-    if (form.useOperator) {
-        ArkModelField(
-            label = stringResource(R.string.models_ark_model_operator),
-            value = form.operatorModel,
-            modality = ArkModality.CHAT,
-            onChange = { onChange(form.copy(operatorModel = it)) },
-        )
-    }
-    if (form.useImage) {
-        ArkModelField(
+    UnifiedModelField(
+        label = stringResource(R.string.models_ark_model_chat),
+        value = form.chatModel,
+        vendor = form.vendor,
+        onChange = { onChange(form.copy(chatModel = it)) },
+    )
+    UnifiedModelField(
+        label = stringResource(R.string.models_ark_model_operator),
+        value = form.operatorModel,
+        vendor = form.vendor,
+        onChange = { onChange(form.copy(operatorModel = it)) },
+    )
+    if (form.vendor == ModelVendor.ARK) {
+        UnifiedModelField(
             label = stringResource(R.string.models_ark_model_image),
             value = form.imageModel,
-            modality = ArkModality.IMAGE,
+            vendor = form.vendor,
+            imageOnly = true,
             onChange = { onChange(form.copy(imageModel = it)) },
         )
+    } else {
+        SettingsNote(stringResource(R.string.models_unified_no_image_hint))
     }
 
-    ArkAccountSection(form, onChange)
+    if (form.vendor == ModelVendor.ARK) {
+        ArkAccountSection(form, onChange)
+    }
 }
 
 /**
- * 「火山引擎账号」：填了 AK/SK 才能查官方价格与官方用量。
+ * 火山引擎账号：填了 AK/SK 才能查官方价格与官方用量。
  *
  * 数据面（模型调用）用 API Key 就够；管控面（查价格、查用量）只认 Access Key，
  * 所以这里是另一份凭证。Secret 只在本机加密保存。
  */
 @Composable
 private fun ArkAccountSection(
-    form: SettingsForm.ArkForm,
-    onChange: (SettingsForm.ArkForm) -> Unit,
+    form: SettingsForm.UnifiedForm,
+    onChange: (SettingsForm.UnifiedForm) -> Unit,
 ) {
     var showSecret by remember { mutableStateOf(false) }
     var refreshing by remember { mutableStateOf(false) }
@@ -202,10 +237,8 @@ private fun ArkAccountSection(
         )
     }
     if (message != null) SettingsNote(message!!)
-    if (dev.lily.app.volc.PriceBook.usingOfficial) {
-        SettingsNote(
-            stringResource(R.string.models_ark_price_official, dev.lily.app.volc.PriceBook.officialCount),
-        )
+    if (PriceBook.usingOfficial) {
+        SettingsNote(stringResource(R.string.models_ark_price_official, PriceBook.officialCount))
     }
 }
 
@@ -214,50 +247,40 @@ private fun ArkAccountSection(
  *
  * 拉不到就保持内置快照——界面永远有价格，不会空着。
  */
-private suspend fun refreshOfficialPrices(form: SettingsForm.ArkForm): Int {
-    val credential = dev.lily.app.volc.VolcCredential(form.accessKeyId.trim(), form.secretAccessKey.trim())
-    val client = dev.lily.app.volc.ArkControlPlane()
+private suspend fun refreshOfficialPrices(form: SettingsForm.UnifiedForm): Int {
+    val credential = VolcCredential(form.accessKeyId.trim(), form.secretAccessKey.trim())
+    val client = ArkControlPlane()
     // 接口按不带版本号的基础名查；把清单里的模型都算上。
-    val names = (dev.lily.app.settings.ArkCatalog.chatModels + dev.lily.app.settings.ArkCatalog.imageModels)
+    val names = (ArkCatalog.chatModels + ArkCatalog.imageModels)
         .map { it.id.substringBeforeLast('-') }
         .distinct()
     val prices = client.listModelPrices(credential, names)
     if (prices.isEmpty()) throw IllegalStateException("没有查到价格")
-    dev.lily.app.volc.PriceBook.applyOfficial(prices)
+    PriceBook.applyOfficial(prices)
     return prices.size
-}
-
-/** 一行能力开关。 */
-@Composable
-private fun ArkCapabilityRow(
-    title: String,
-    on: Boolean,
-    onChange: (Boolean) -> Unit,
-) {
-    SettingsRow(
-        title = title,
-        trailing = {
-            LilySwitch(checked = on, onCheckedChange = onChange)
-        },
-    )
 }
 
 /**
  * 模型选择：清单下拉 + 可以直接改字。
  *
- * 下拉里每条都带价格；选完以后下面再写一遍价格与一轮对话的估算，
- * 让「换模型要多花多少钱」这件事在点保存之前就看得见。
+ * 下拉里每条都带价格（只有方舟的模型有价格）；选完以后下面再写一遍价格与
+ * 一轮对话的估算，让「换模型要多花多少钱」在点保存之前就看得见。
  */
 @Composable
-private fun ArkModelField(
+private fun UnifiedModelField(
     label: String,
     value: String,
-    modality: ArkModality,
+    vendor: ModelVendor,
+    imageOnly: Boolean = false,
     onChange: (String) -> Unit,
 ) {
     var menu by remember { mutableStateOf(false) }
-    val choices = remember(modality) {
-        if (modality == ArkModality.CHAT) ArkCatalog.chatModels else ArkCatalog.imageModels
+    val choices = remember(vendor, imageOnly) {
+        if (vendor == ModelVendor.ARK) {
+            if (imageOnly) ArkCatalog.imageModels.map { it.id } else ArkCatalog.chatModels.map { it.id }
+        } else {
+            vendor.models
+        }
     }
     val selected = ArkCatalog.byId(value)
 
@@ -268,27 +291,27 @@ private fun ArkModelField(
                 onValueChange = onChange,
                 singleLine = true,
                 trailingIcon = {
-                    IconButton(onClick = { menu = true }) {
+                    IconButton(onClick = { menu = true }, enabled = choices.isNotEmpty()) {
                         Icon(Icons.Filled.ArrowDropDown, contentDescription = stringResource(R.string.models_pick_model))
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
             )
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                choices.forEach { model ->
+                choices.forEach { id ->
+                    val model = ArkCatalog.byId(id)
                     DropdownMenuItem(
                         text = {
                             Column {
-                                Text(model.displayName)
-                                Text(
-                                    model.priceText,
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
+                                Text(model?.displayName ?: id)
+                                if (model != null) {
+                                    Text(model.priceText, style = MaterialTheme.typography.bodySmall)
+                                }
                             }
                         },
                         onClick = {
                             menu = false
-                            onChange(model.id)
+                            onChange(id)
                         },
                     )
                 }
@@ -299,14 +322,12 @@ private fun ArkModelField(
     if (selected != null) {
         SettingsNote(selected.priceText)
         if (selected.note.isNotBlank()) SettingsNote(selected.note)
-        if (selected.modality == ArkModality.CHAT) {
-            val cost = selected.estimate(
-                ArkModel.TYPICAL_INPUT_TOKENS,
-                ArkModel.TYPICAL_OUTPUT_TOKENS,
-            )
-            SettingsNote(stringResource(R.string.models_ark_estimate, cost))
-        }
-    } else {
+        val cost = selected.estimate(
+            dev.lily.app.settings.ArkModel.TYPICAL_INPUT_TOKENS,
+            dev.lily.app.settings.ArkModel.TYPICAL_OUTPUT_TOKENS,
+        )
+        SettingsNote(stringResource(R.string.models_ark_estimate, cost))
+    } else if (value.isNotBlank()) {
         SettingsNote(stringResource(R.string.models_ark_price_unknown))
     }
 }
