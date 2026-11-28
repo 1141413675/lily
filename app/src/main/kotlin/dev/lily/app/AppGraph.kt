@@ -280,12 +280,14 @@ class AppGraph(context: Context, baseLlm: LlmClientFactory = LlmClients.default)
             post = { session.postAssistantImage(it) },
             generate = { prompt, reference ->
                 val current = settings()
-                if (current.chat.apiKey.isBlank()) {
+                // 生图用哪家由「发图」页决定；没单独填 Key 就沿用聊天那家的。
+                val key = current.image.apiKey.ifBlank { current.chat.apiKey }
+                if (key.isBlank()) {
                     null
                 } else {
                     imageGenerator.generate(
-                        baseUrl = current.chat.baseUrl,
-                        apiKey = current.chat.apiKey,
+                        baseUrl = current.image.effectiveBaseUrl,
+                        apiKey = key,
                         model = current.image.effectiveModel,
                         prompt = prompt,
                         reference = reference,

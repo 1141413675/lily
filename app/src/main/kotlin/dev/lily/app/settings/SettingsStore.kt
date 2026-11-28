@@ -52,6 +52,7 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
             putBoolean(IMAGE_ENABLED, stored.image.enabled)
             putBoolean(IMAGE_SELFIE, stored.image.includeSelfie)
             putString(IMAGE_MODEL, stored.image.effectiveModel)
+            putString(IMAGE_VENDOR, stored.image.vendor.name)
             putString(EMOJI_STYLE, stored.emojiStyle.name)
             putString(APPEARANCE_MODE, stored.appearance.mode.name)
             putString(APPEARANCE_IMAGE, stored.appearance.imagePath)
@@ -79,7 +80,9 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
             putBoolean(MEMORY_EMBEDDING_ENABLED, stored.memoryEmbedding.enabled)
             putString(MEMORY_EMBEDDING + BASE_URL, stored.memoryEmbedding.baseUrl)
             putString(MEMORY_EMBEDDING + MODEL, stored.memoryEmbedding.model)
+            putString(MEMORY_EMBEDDING + VENDOR, stored.memoryEmbedding.vendor.name)
             putString(MEMORY_EMBEDDING + API_KEY, stored.memoryEmbedding.apiKey)
+            putString(IMAGE + API_KEY, stored.image.apiKey)
             putString(ARK + API_KEY, stored.unified.apiKey)
             putString(ARK + ARK_SECRET_ACCESS_KEY, stored.unified.secretAccessKey)
         }.commit()
@@ -173,6 +176,9 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
                 enabled = secret.getBoolean(MEMORY_EMBEDDING_ENABLED, false),
                 baseUrl = secret.getString(MEMORY_EMBEDDING + BASE_URL, null).orEmpty(),
                 model = secret.getString(MEMORY_EMBEDDING + MODEL, null).orEmpty(),
+                vendor = secret.getString(MEMORY_EMBEDDING + VENDOR, null)
+                    ?.let { name -> ModelVendor.entries.firstOrNull { it.name == name } }
+                    ?: defaults.memoryEmbedding.vendor,
                 apiKey = secret.getString(MEMORY_EMBEDDING + API_KEY, null).orEmpty(),
             ),
             provisioning = plain.getString(PROVISIONING, null)
@@ -212,6 +218,10 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
             image = ImageSettings(
                 enabled = plain.getBoolean(IMAGE_ENABLED, defaults.image.enabled),
                 includeSelfie = plain.getBoolean(IMAGE_SELFIE, defaults.image.includeSelfie),
+                vendor = plain.getString(IMAGE_VENDOR, null)
+                    ?.let { name -> ModelVendor.entries.firstOrNull { it.name == name } }
+                    ?: defaults.image.vendor,
+                apiKey = secret.getString(IMAGE + API_KEY, null).orEmpty(),
                 model = plain.getString(IMAGE_MODEL, null)?.trim()?.takeIf { it.isNotBlank() }
                     ?: defaults.image.model,
             ),
@@ -521,6 +531,7 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
         private const val REALTIME_ENABLED = "realtime.enabled"
         private const val MEMORY_EMBEDDING = "memoryEmbedding."
         private const val MEMORY_EMBEDDING_ENABLED = "memoryEmbedding.enabled"
+        private const val MEMORY_EMBEDDING_VENDOR = "memoryEmbedding.vendor"
         private const val ARK = "ark."
         private const val ARK_CHAT_MODEL = "ark.chatModel"
         private const val ARK_OPERATOR_MODEL = "ark.operatorModel"
@@ -548,7 +559,9 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
         private const val RESOURCE_ID = "resourceId"
         private const val GROUP_ID = "groupId"
         private const val SPEED = "speed"
+        private const val IMAGE = "image."
         private const val IMAGE_MODEL = "image.model"
+        private const val IMAGE_VENDOR = "image.vendor"
         private const val REPLY_MODE = "reply.mode"
         private const val REPLY_MODE_CHOSEN = "reply.modeChosen"
         private const val REPLY_MODE_NOTICE = "reply.modeNotice"

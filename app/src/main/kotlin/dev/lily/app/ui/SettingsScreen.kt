@@ -485,6 +485,21 @@ private fun ImageSettingsScreen(graph: AppGraph, onBack: () -> Unit) {
             val arkDrivesImage = stored.unified.enabled &&
                 stored.provisioning == dev.lily.app.settings.ProvisioningMode.UNIFIED &&
                 stored.unified.isVolcano && stored.unified.imageModel.isNotBlank()
+            SettingsGroup("生图服务方") {
+                // 只有支持 OpenAI 风格生图接口的厂商才列出来。
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ImageSettings.SUPPORTED_VENDORS.forEach { vendor ->
+                        FilterChip(
+                            selected = stored.image.vendor == vendor,
+                            onClick = {
+                                store.save(store.current.copy(image = store.current.image.copy(vendor = vendor)))
+                            },
+                            label = { Text(vendor.displayName) },
+                        )
+                    }
+                }
+                SettingsNote("两家都支持 OpenAI 风格的生图接口；别的家没有这个接口。")
+            }
             SettingsGroup("图片模型") {
                 OutlinedTextField(
                     value = stored.image.model,
@@ -501,6 +516,33 @@ private fun ImageSettingsScreen(graph: AppGraph, onBack: () -> Unit) {
                     SettingsNote("发图模型由「模型与接口」里的「火山方舟一体」接管，这里改不了。")
                 } else {
                     SettingsNote("默认 ${ImageSettings.DEFAULT_MODEL}；留空也会回退到这个默认值。")
+                }
+            }
+            if (!arkDrivesImage) {
+                SettingsGroup("生图 Key") {
+                    var showImageKey by remember { mutableStateOf(false) }
+                    OutlinedTextField(
+                        value = stored.image.apiKey,
+                        onValueChange = {
+                            store.save(store.current.copy(image = store.current.image.copy(apiKey = it)))
+                        },
+                        label = { Text("${stored.image.vendor.displayName} 的 API Key") },
+                        singleLine = true,
+                        visualTransformation = if (showImageKey) VisualTransformation.None else PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
+                        trailingIcon = {
+                            IconButton(onClick = { showImageKey = !showImageKey }) {
+                                Icon(
+                                    if (showImageKey) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                    contentDescription = stringResource(
+                                        if (showImageKey) R.string.settings_hide_key else R.string.settings_show_key,
+                                    ),
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    SettingsNote("留空就沿用聊天那家的 Key；单独填了就不用给聊天配同一个 Key。")
                 }
             }
             SettingsGroup("费用") {

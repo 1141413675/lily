@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -36,6 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -282,6 +284,26 @@ private fun MemoryEmbeddingSection(
     value: MemoryEmbeddingSettings,
     onChange: (MemoryEmbeddingSettings) -> Unit,
 ) {
+    // 挑一家就把地址与常用向量模型预填好；也可以自己填地址。
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        dev.lily.app.settings.ModelVendor.entries
+            .filter { it.supportsEmbedding || it == dev.lily.app.settings.ModelVendor.CUSTOM }
+            .forEach { vendor ->
+                FilterChip(
+                    selected = value.vendor == vendor,
+                    onClick = {
+                        onChange(
+                            if (vendor == dev.lily.app.settings.ModelVendor.CUSTOM) {
+                                value.copy(vendor = vendor)
+                            } else {
+                                value.preset(vendor)
+                            },
+                        )
+                    },
+                    label = { Text(vendor.displayName) },
+                )
+            }
+    }
     SettingsRow(
         title = stringResource(R.string.models_embedding_switch),
         trailing = {

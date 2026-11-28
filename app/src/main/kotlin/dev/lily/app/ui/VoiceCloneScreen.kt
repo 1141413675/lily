@@ -100,6 +100,9 @@ internal fun VoiceCloneScreen(
     var notice by remember { mutableStateOf<String?>(null) }
     var created by remember { mutableStateOf<ClonedVoiceStore.ClonedVoice?>(null) }
     var playing by remember { mutableStateOf(false) }
+    // 火山训练音色是异步的：这里显示"正在训练"，等轮询到训好再往下走。
+    var training by remember { mutableStateOf(false) }
+    var trainingHint by remember { mutableStateOf<String?>(null) }
     var deleting by remember { mutableStateOf<ClonedVoiceStore.ClonedVoice?>(null) }
 
     fun setDefault(uri: String) {
@@ -179,6 +182,25 @@ internal fun VoiceCloneScreen(
         step = CloneStep.SAMPLE
         error = null
         advice = null
+    }
+
+    /**
+     * 等火山把音色训好。
+     *
+     * 训练是异步的：注册完只拿到 id，要用 get_voice 轮询到 status 为 2 或 4。
+     * 最多等 [TRAIN_WAIT_MS]，超时就报错——不能让界面一直转。
+     */
+    suspend fun awaitVoiceReady(
+        config: dev.lily.app.settings.VoiceSettings,
+        speakerId: String,
+    ): String {
+        val deadline = System.currentTimeMillis() + TRAIN_WAIT_MS
+        while (System.currentTimeMillis() < deadline) {
+            delay(TRAIN_POLL_MS)
+            val state = withContext(Dispatchers.IO) { DoubaoTts3.queryVoice(config, speakerId) }
+            if (state.ready) return state.speakerId.ifBlank { speakerId }
+        }
+        throw IllegalStateException("音色还在训练，稍后再来生成一次。")
     }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -443,12 +465,22 @@ internal fun VoiceCloneScreen(
                                     scope.launch {
                                         try {
                                             val uri = if (cloneVendor == dev.lily.app.settings.VoiceVendor.DOUBAO3) {
-                                                withContext(Dispatchers.IO) {
+                                                // 火山这边是异步训练：拿到 id 还要等它训好。
+                                                val first = withContext(Dispatchers.IO) {
                                                     DoubaoTts3.cloneVoice(
                                                         config = volcano,
                                                         audio = file.readBytes(),
                                                         promptText = SAMPLE_TEXT,
-                                                    ).speakerId
+                                                    )
+                                                }
+                                                if (first.ready) {
+                                                    first.speakerId
+                                                } else {
+                                                    withContext(Dispatchers.Main) {
+                                                        training = true
+                                                        trainingHint = "正在训练音色，稍等一下…"
+                                                    }
+                                                    awaitVoiceReady(volcano, first.speakerId)
                                                 }
                                             } else {
                                                 withContext(Dispatchers.IO) {
@@ -457,6 +489,7 @@ internal fun VoiceCloneScreen(
                                             }
                                             val saved = graph.clones.add(uri, name.trim(), vendor = cloneVendor)
                                             withContext(Dispatchers.Main) {
+                                                training = false
                                                 file.delete()
                                                 sample = null
                                                 created = saved
@@ -464,6 +497,7 @@ internal fun VoiceCloneScreen(
                                             }
                                         } catch (e: Exception) {
                                             withContext(Dispatchers.Main) {
+                                                training = false
                                                 error = e.message ?: "生成音色失败"
                                                 step = CloneStep.NAMING
                                             }
@@ -530,7 +564,16 @@ internal fun VoiceCloneScreen(
         AlertDialog(
             onDismissRequest = { deleting = null },
             title = { Text("删除「${clone.name}」？") },
-            text = { Text("会先删除云端音色，再删本机记录；如果 TA 正在用这个声音，会回到默认音色。") },
+            text = {
+                Text(
+                    if (clone.vendor == dev.lily.app.settings.VoiceVendor.DOUBAO3) {
+                        "火山方舟的音色只能在控制台删除，这里只删本机记录。" +
+                            "云端音色会留着，也还占着音色槽位——要彻底清掉请去火山控制台的音色管理里删。"
+                    } else {
+                        "会先删除云端音色，再删本机记录；如果 TA 正在用这个声音，会回到默认音色。"
+                    },
+                )
+            },
             confirmButton = {
                 TextButton(onClick = {
                     deleting = null
@@ -540,7 +583,10 @@ internal fun VoiceCloneScreen(
                     }
                     scope.launch {
                         try {
-                            withContext(Dispatchers.IO) { api.deleteVoice(tts, clone.uri) }
+                            // 火山那边没有删除接口，只删本机记录。
+                            if (clone.vendor != dev.lily.app.settings.VoiceVendor.DOUBAO3) {
+                                withContext(Dispatchers.IO) { api.deleteVoice(tts, clone.uri) }
+                            }
                             withContext(Dispatchers.Main) {
                                 if (settings.persona.voice == clone.uri) {
                                     onSaveSettings(
@@ -551,7 +597,11 @@ internal fun VoiceCloneScreen(
                                 }
                                 graph.clones.remove(clone.id)
                                 if (created?.id == clone.id) created = null
-                                notice = "已删除克隆音色，云端与本机记录一起清理"
+                                notice = if (clone.vendor == dev.lily.app.settings.VoiceVendor.DOUBAO3) {
+                                    "已删掉本机记录；云端音色还在火山控制台里，需要的话去那儿删。"
+                                } else {
+                                    "已删除克隆音色，云端与本机记录一起清理"
+                                }
                             }
                         } catch (e: Exception) {
                             withContext(Dispatchers.Main) {
@@ -686,6 +736,10 @@ private fun durationMs(file: File): Long? {
 
 private const val MIN_MS = 8_000L
 private const val MAX_MS = 30_000L
+
+/** 等音色训练：每 3 秒查一次，最多等 2 分钟。 */
+private const val TRAIN_POLL_MS = 3_000L
+private const val TRAIN_WAIT_MS = 120_000L
 
 /** 样本时长：硅基 8–30 秒，火山 3.0 要 10–60 秒。 */
 private fun sampleRange(vendor: dev.lily.app.settings.VoiceVendor): LongRange =

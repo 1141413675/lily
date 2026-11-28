@@ -10,6 +10,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import org.json.JSONObject
+import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -58,8 +60,76 @@ object PriceBook {
     /** 当前是不是用的在线价格。 */
     val usingOfficial: Boolean get() = overlay.isNotEmpty()
 
-    /** 覆盖了几��模型。 */
+    /** 覆盖了几个模型。 */
     val officialCount: Int get() = overlay.size
+
+    /** 在线价格是哪天拉的；没拉过就是 null。 */
+    @Volatile
+    var fetchedAt: Long? = null
+        private set
+
+    /**
+     * 记下在线价格并落到本机。
+     *
+     * 在线价格是「当前账号对应的价格」，重启后还用它比退回内置快照更准。
+     * 存到 `<files>/ark-prices.json`，只在本机。
+     */
+    fun applyOfficial(prices: Map<String, OfficialPrice>, file: File? = null, now: Long = System.currentTimeMillis()) {
+        overlay.clear()
+        overlay.putAll(prices)
+        fetchedAt = now
+        if (file != null) persist(file)
+    }
+
+    /** 从本机读回上次拉到的在线价格；没有就保持内置快照。 */
+    fun loadOfficial(file: File, now: Long = System.currentTimeMillis()) {
+        if (!file.isFile) return
+        runCatching {
+            val root = JSONObject(file.readText())
+            val prices = LinkedHashMap<String, OfficialPrice>()
+            val models = root.optJSONObject("prices") ?: JSONObject()
+            for (model in models.keys()) {
+                val o = models.optJSONObject(model) ?: continue
+                prices[model] = OfficialPrice(
+                    inputPerMTok = if (o.has("in")) o.optDouble("in") else null,
+                    outputPerMTok = if (o.has("out")) o.optDouble("out") else null,
+                    perImage = if (o.has("img")) o.optDouble("img") else null,
+                    note = o.optString("note"),
+                )
+            }
+            if (prices.isNotEmpty()) {
+                overlay.clear()
+                overlay.putAll(prices)
+                fetchedAt = root.optLong("fetchedAt", now)
+            }
+        }
+    }
+
+    /** 清掉在线价格，回到内置快照。 */
+    fun reset(file: File? = null) {
+        clearOfficial()
+        fetchedAt = null
+        file?.let { runCatching { it.delete() } }
+    }
+
+    private fun persist(file: File) {
+        runCatching {
+            file.parentFile?.takeIf { !it.exists() }?.mkdirs()
+            val models = JSONObject()
+            overlay.forEach { (model, price) ->
+                models.put(
+                    model,
+                    JSONObject().apply {
+                        price.inputPerMTok?.let { put("in", it) }
+                        price.outputPerMTok?.let { put("out", it) }
+                        price.perImage?.let { put("img", it) }
+                        put("note", price.note)
+                    },
+                )
+            }
+            file.writeText(JSONObject().put("fetchedAt", fetchedAt ?: 0L).put("prices", models).toString())
+        }
+    }
 
     /**
      * 某个模型当前的价格。

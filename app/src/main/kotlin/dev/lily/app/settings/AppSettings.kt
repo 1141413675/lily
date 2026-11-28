@@ -48,7 +48,16 @@ data class MemoryEmbeddingSettings(
     val baseUrl: String = "",
     val model: String = "",
     val apiKey: String = "",
+    /** 向量化用哪一家；选了就把地址与常用模型预填好。 */
+    val vendor: ModelVendor = ModelVendor.CUSTOM,
 ) {
+    /** 选厂商时的预设：地址与常用模型；Key 留空。 */
+    fun preset(vendor: ModelVendor) = copy(
+        baseUrl = vendor.embeddingBaseUrl,
+        model = vendor.embeddingModels.firstOrNull().orEmpty(),
+        vendor = vendor,
+    )
+
     val requestUrl: String?
         get() {
             val base = baseUrl.trim().trimEnd('/')
@@ -288,14 +297,24 @@ enum class ReplyMode { AUTO, TEXT, VOICE, CALL }
 data class ImageSettings(
     val enabled: Boolean = true,
     val includeSelfie: Boolean = true,
-    /** 方舟图片模型，可在「发图」页改；留空时回退 [DEFAULT_MODEL]。 */
+    /** 图片模型，可在「发图」页改；留空时回退 [DEFAULT_MODEL]。 */
     val model: String = DEFAULT_MODEL,
+    /** 生图用哪一家。只有支持 OpenAI 风格生图接口的厂商才行。 */
+    val vendor: ModelVendor = ModelVendor.ARK,
+    /** 这一家的 Key；留空就沿用聊天那家的。 */
+    val apiKey: String = "",
 ) {
     val effectiveModel: String get() = model.trim().ifBlank { DEFAULT_MODEL }
+
+    /** 生图用的地址：跟着厂商走，两家都是 OpenAI 风格的 `/images/generations`。 */
+    val effectiveBaseUrl: String get() = vendor.baseUrl
 
     companion object {
         /** 方舟当前在售的 Seedream 5.0 flash；旧 4.0 已下线。 */
         const val DEFAULT_MODEL = "doubao-seedream-5-0-flash-260915"
+
+        /** 支持 OpenAI 兼容生图接口的厂商；别的家没有这个接口，选了会直接失败。 */
+        val SUPPORTED_VENDORS: List<ModelVendor> = listOf(ModelVendor.ARK, ModelVendor.OPENAI)
     }
 }
 

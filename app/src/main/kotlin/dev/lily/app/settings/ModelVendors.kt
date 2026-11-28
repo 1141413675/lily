@@ -40,12 +40,8 @@ enum class ModelVendor(
     ARK(
         displayName = "火山方舟（豆包）",
         baseUrl = "https://ark.cn-beijing.volces.com/api/v3",
-        models = listOf(
-            "doubao-seed-1-6-250615",
-            "doubao-seed-1-6-flash-250615",
-            "doubao-1-5-pro-32k-250115",
-            "deepseek-v3-250324",
-        ),
+        // 与 ArkCatalog 保持一致：这里只是兜底清单，能拉到接口时用接口的结果。
+        models = ArkCatalog.chatModels.map { it.id },
         keyHint = "方舟的 API Key（ark- 开头）",
     ),
     OPENAI(
@@ -227,6 +223,29 @@ enum class ModelVendor(
     );
 
     val defaultModel: String get() = models.firstOrNull().orEmpty()
+
+    /** 向量化接口的地址；这一家没有就留空（设置页让用户自己填）。 */
+    val embeddingBaseUrl: String
+        get() = when (this) {
+            OPENAI -> "https://api.openai.com/v1"
+            SILICONFLOW -> "https://api.siliconflow.cn/v1"
+            ARK -> "https://ark.cn-beijing.volces.com/api/v3"
+            GROQ -> "https://api.groq.com/openai/v1"
+            else -> ""
+        }
+
+    /** 这一家常用的向量模型。 */
+    val embeddingModels: List<String>
+        get() = when (this) {
+            OPENAI -> listOf("text-embedding-3-small", "text-embedding-3-large")
+            SILICONFLOW -> listOf("BAAI/bge-m3", "Qwen/Qwen3-Embedding-8B")
+            ARK -> listOf("doubao-embedding-vision-241215", "doubao-embedding-text-240715")
+            GROQ -> listOf("nomic-embed-text-v1.5")
+            else -> emptyList()
+        }
+
+    /** 支持向量化的厂商。 */
+    val supportsEmbedding: Boolean get() = embeddingModels.isNotEmpty()
 
     /** 该厂商标注的 Key 提示；自定义或有地址但没有提示时退回通用文案。 */
     val keyHintText: String get() = keyHint.ifBlank { "该厂商的 API Key" }

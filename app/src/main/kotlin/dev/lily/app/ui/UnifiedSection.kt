@@ -24,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -42,6 +43,7 @@ import dev.lily.app.volc.ArkControlPlane
 import dev.lily.app.volc.PriceBook
 import dev.lily.app.volc.VolcCredential
 import kotlinx.coroutines.launch
+import java.io.File
 
 /**
  * 「模型接法」：一体化还是自定义。
@@ -231,13 +233,16 @@ private fun ArkAccountSection(
     )
 
     val canRefresh = form.accessKeyId.isNotBlank() && form.secretAccessKey.isNotBlank()
+    // 在线价格存在本机：重启后还用它，比退回内置快照更准。
+    val priceFile = remember { File(context.filesDir, "ark-prices.json") }
+    LaunchedEffect(Unit) { PriceBook.loadOfficial(priceFile) }
     OutlinedButton(
         enabled = canRefresh && !refreshing,
         onClick = {
             refreshing = true
             message = null
             scope.launch {
-                val result = runCatching { refreshOfficialPrices(form) }
+                val result = runCatching { refreshOfficialPrices(form, priceFile) }
                 refreshing = false
                 message = result.fold(
                     onSuccess = { context.getString(R.string.models_ark_price_refreshed, it) },
@@ -304,7 +309,7 @@ private fun UnifiedVoiceModelField(
  *
  * 拉不到就保持内置快照——界面永远有价格，不会空着。
  */
-private suspend fun refreshOfficialPrices(form: SettingsForm.UnifiedForm): Int {
+private suspend fun refreshOfficialPrices(form: SettingsForm.UnifiedForm, file: File): Int {
     val credential = VolcCredential(form.accessKeyId.trim(), form.secretAccessKey.trim())
     val client = ArkControlPlane()
     // 接口按不带版本号的基础名查；把清单里的模型都算上。
@@ -313,7 +318,7 @@ private suspend fun refreshOfficialPrices(form: SettingsForm.UnifiedForm): Int {
         .distinct()
     val prices = client.listModelPrices(credential, names)
     if (prices.isEmpty()) throw IllegalStateException("没有查到价格")
-    PriceBook.applyOfficial(prices)
+    PriceBook.applyOfficial(prices, file)
     return prices.size
 }
 
