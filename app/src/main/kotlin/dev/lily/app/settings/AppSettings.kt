@@ -391,6 +391,7 @@ data class AppSettings(
             add(asr.silicon.apiKey)
             add(asr.doubao.apiKey)
             add(ark.apiKey)
+            add(ark.secretAccessKey)
             add(tts.silicon.apiKey)
             add(tts.doubao.apiKey)
             add(realtime.apiKey)
@@ -451,6 +452,10 @@ data class SettingsForm(
         val useOperator: Boolean = false,
         val useImage: Boolean = false,
         val useVoice: Boolean = false,
+        /** 火山引擎 Access Key ID：用来调管控面（查官方价格与官方用量）。 */
+        val accessKeyId: String = "",
+        /** 火山引擎 Secret Access Key。 */
+        val secretAccessKey: String = "",
     ) {
         fun toSettings() = ArkSettings(
             apiKey = apiKey.trim(),
@@ -484,9 +489,11 @@ data class SettingsForm(
                 imageModel = a.imageModel,
                 useChat = a.useChat,
                 useOperator = a.useOperator,
-                useImage = a.useImage,
-                useVoice = a.useVoice,
-            )
+            useImage = a.useImage,
+            useVoice = a.useVoice,
+            accessKeyId = a.accessKeyId,
+            secretAccessKey = a.secretAccessKey,
+        )
         }
     }
 

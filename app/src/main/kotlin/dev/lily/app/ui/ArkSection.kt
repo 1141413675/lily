@@ -16,12 +16,14 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -35,6 +37,7 @@ import dev.lily.app.settings.ArkCatalog
 import dev.lily.app.settings.ArkModel
 import dev.lily.app.settings.ArkModality
 import dev.lily.app.settings.SettingsForm
+import kotlinx.coroutines.launch
 
 /**
  * 「火山方舟一体」面板：一个 Key，多项能力。
@@ -126,6 +129,102 @@ internal fun ArkSection(
             onChange = { onChange(form.copy(imageModel = it)) },
         )
     }
+
+    ArkAccountSection(form, onChange)
+}
+
+/**
+ * 「火山引擎账号」：填了 AK/SK 才能查官方价格与官方用量。
+ *
+ * 数据面（模型调用）用 API Key 就够；管控面（查价格、查用量）只认 Access Key，
+ * 所以这里是另一份凭证。Secret 只在本机加密保存。
+ */
+@Composable
+private fun ArkAccountSection(
+    form: SettingsForm.ArkForm,
+    onChange: (SettingsForm.ArkForm) -> Unit,
+) {
+    var showSecret by remember { mutableStateOf(false) }
+    var refreshing by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    SettingsNote(stringResource(R.string.models_ark_account_hint))
+
+    OutlinedTextField(
+        value = form.accessKeyId,
+        onValueChange = { onChange(form.copy(accessKeyId = it)) },
+        label = { Text(stringResource(R.string.models_ark_access_key_id)) },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    OutlinedTextField(
+        value = form.secretAccessKey,
+        onValueChange = { onChange(form.copy(secretAccessKey = it)) },
+        label = { Text(stringResource(R.string.models_ark_secret_access_key)) },
+        visualTransformation = if (showSecret) VisualTransformation.None else PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
+        trailingIcon = {
+            IconButton(onClick = { showSecret = !showSecret }) {
+                Icon(
+                    if (showSecret) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                    contentDescription = stringResource(
+                        if (showSecret) R.string.settings_hide_key else R.string.settings_show_key,
+                    ),
+                )
+            }
+        },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+
+    val canRefresh = form.accessKeyId.isNotBlank() && form.secretAccessKey.isNotBlank()
+    OutlinedButton(
+        enabled = canRefresh && !refreshing,
+        onClick = {
+            refreshing = true
+            message = null
+            scope.launch {
+                val result = runCatching { refreshOfficialPrices(form) }
+                refreshing = false
+                message = result.fold(
+                    onSuccess = { context.getString(R.string.models_ark_price_refreshed, it) },
+                    onFailure = { it.message ?: context.getString(R.string.models_ark_price_failed) },
+                )
+            }
+        },
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(
+            if (refreshing) stringResource(R.string.models_ark_refreshing)
+            else stringResource(R.string.models_ark_refresh_price),
+        )
+    }
+    if (message != null) SettingsNote(message!!)
+    if (dev.lily.app.volc.PriceBook.usingOfficial) {
+        SettingsNote(
+            stringResource(R.string.models_ark_price_official, dev.lily.app.volc.PriceBook.officialCount),
+        )
+    }
+}
+
+/**
+ * 拉官方价格并覆盖价格表。
+ *
+ * 拉不到就保持内置快照——界面永远有价格，不会空着。
+ */
+private suspend fun refreshOfficialPrices(form: SettingsForm.ArkForm): Int {
+    val credential = dev.lily.app.volc.VolcCredential(form.accessKeyId.trim(), form.secretAccessKey.trim())
+    val client = dev.lily.app.volc.ArkControlPlane()
+    // 接口按不带版本号的基础名查；把清单里的模型都算上。
+    val names = (dev.lily.app.settings.ArkCatalog.chatModels + dev.lily.app.settings.ArkCatalog.imageModels)
+        .map { it.id.substringBeforeLast('-') }
+        .distinct()
+    val prices = client.listModelPrices(credential, names)
+    if (prices.isEmpty()) throw IllegalStateException("没有查到价格")
+    dev.lily.app.volc.PriceBook.applyOfficial(prices)
+    return prices.size
 }
 
 /** 一行能力开关。 */

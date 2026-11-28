@@ -37,6 +37,17 @@ data class ArkSettings(
     val useImage: Boolean = false,
     /** 朗读、语音识别、通话都走豆包语音（同一个 Key）。 */
     val useVoice: Boolean = false,
+    /**
+     * 火山引擎 Access Key ID。
+     *
+     * 只有它能让 App 调方舟的**管控面**接口：查官方价格、查官方用量。
+     * 数据面（模型调用）仍然用上面的 API Key，两者是两套凭证。
+     *
+     * 注意主账号的 Access Key 权限很大，官方建议用 IAM 子账号。
+     */
+    val accessKeyId: String = "",
+    /** 火山引擎 Secret Access Key。只在本机加密保存。 */
+    val secretAccessKey: String = "",
 ) {
     /** 填了 Key 才算启用；没填的话下面的开关没有意义。 */
     val enabled: Boolean get() = apiKey.isNotBlank()
@@ -72,6 +83,9 @@ data class ArkSettings(
 
     /** 开启了哪几项；一项都没开的话这个面板没什么用。 */
     val anyEnabled: Boolean get() = enabled && (useChat || useOperator || useImage || useVoice)
+
+    /** 能不能调管控面接口（查官方价格与用量）。 */
+    val hasAccount: Boolean get() = accessKeyId.isNotBlank() && secretAccessKey.isNotBlank()
 
     override fun toString() =
         "ArkSettings(enabled=$enabled, useChat=$useChat, useOperator=$useOperator, " +

@@ -126,6 +126,9 @@ fun ModelsScreen(graph: AppGraph, onBack: () -> Unit) {
                     saved = false
                 }
             }
+            SettingsGroup(stringResource(R.string.models_usage_title)) {
+                UsageSection(graph.usageStore, settings.ark)
+            }
             SettingsGroup(stringResource(R.string.settings_chat_model)) {
                 KeyHint(stringResource(R.string.models_vendor_key_hint))
                 ModelSection(

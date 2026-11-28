@@ -75,7 +75,7 @@ import java.io.IOException
  * HTTP only; keys are written in the file because Android has no environment); bundled skills are
  * extracted to `<files>/bundled-skills/`.
  */
-class AppGraph(context: Context, private val llm: LlmClientFactory = LlmClients.default) {
+class AppGraph(context: Context, baseLlm: LlmClientFactory = LlmClients.default) {
     private val app: Context = context.applicationContext
 
     /** Process-wide scope; the session runs agent work here. */
@@ -90,6 +90,21 @@ class AppGraph(context: Context, private val llm: LlmClientFactory = LlmClients.
 
     val settings: SettingsStore by lazy { SettingsStore.create(app) }
     internal val agentDirectory by lazy { AgentDirectory.create(app) }
+
+    /**
+     * 用量记账：只存在本机，用来回答「这个 App 花了多少」。
+     *
+     * 所有模型客户端都从这里过一遍，所以聊天、操作、发动态、做梦、主动开口
+     * 一次都不漏。
+     */
+    val usageStore by lazy { dev.lily.app.usage.UsageStore(File(app.filesDir, "usage.json")) }
+
+    /** 包一层记用量；记账出问题也不该影响对话。 */
+    private val llm: LlmClientFactory = LlmClientFactory { config ->
+        dev.lily.app.usage.UsageRecordingClient(baseLlm.create(config)) { model, input, output ->
+            usageStore.record(model, input, output)
+        }
+    }
 
     val memory by lazy { FileMemoryStore(memoryDir) }
     private val embeddingClient by lazy { EmbeddingClient() }

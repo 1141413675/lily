@@ -67,6 +67,7 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
             putBoolean(ARK_USE_OPERATOR, stored.ark.useOperator)
             putBoolean(ARK_USE_IMAGE, stored.ark.useImage)
             putBoolean(ARK_USE_VOICE, stored.ark.useVoice)
+            putString(ARK_ACCESS_KEY_ID, stored.ark.accessKeyId)
         }
         val saved = secret.edit().apply {
             putString(CHAT + API_KEY, stored.chat.apiKey)
@@ -83,6 +84,7 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
             putString(MEMORY_EMBEDDING + MODEL, stored.memoryEmbedding.model)
             putString(MEMORY_EMBEDDING + API_KEY, stored.memoryEmbedding.apiKey)
             putString(ARK + API_KEY, stored.ark.apiKey)
+            putString(ARK + ARK_SECRET_ACCESS_KEY, stored.ark.secretAccessKey)
         }.commit()
         // A failed opt-in must never activate network requests in the running process.
         _settings.value = if (!saved && previous.memoryEmbedding != stored.memoryEmbedding) {
@@ -180,6 +182,8 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
                 useOperator = plain.getBoolean(ARK_USE_OPERATOR, defaults.ark.useOperator),
                 useImage = plain.getBoolean(ARK_USE_IMAGE, defaults.ark.useImage),
                 useVoice = plain.getBoolean(ARK_USE_VOICE, defaults.ark.useVoice),
+                accessKeyId = plain.getString(ARK_ACCESS_KEY_ID, null)?.trim().orEmpty(),
+                secretAccessKey = secret.getString(ARK + ARK_SECRET_ACCESS_KEY, null).orEmpty(),
             ),
             replyMode = replyMode,
             replyModeChosen = replyChosenStored,
@@ -460,6 +464,8 @@ class SettingsStore(private val plain: SharedPreferences, internal val secret: S
         private const val ARK_USE_OPERATOR = "ark.useOperator"
         private const val ARK_USE_IMAGE = "ark.useImage"
         private const val ARK_USE_VOICE = "ark.useVoice"
+        private const val ARK_ACCESS_KEY_ID = "ark.accessKeyId"
+        private const val ARK_SECRET_ACCESS_KEY = "secretAccessKey"
         private const val BASE_URL = "baseUrl"
         private const val MODEL = "model"
         private const val API_KEY = "apiKey"
